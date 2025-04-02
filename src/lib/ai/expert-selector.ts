@@ -4,7 +4,7 @@ import openai, { getModel } from './openai-client';
 
 export async function selectExperts(
     topic: string,
-    expertType: 'historical' | 'domain' = 'historical',
+    expertType: 'historical' | 'ai' = 'historical',
     count: number = 2
 ): Promise<Expert[]> {
     try {
@@ -46,6 +46,7 @@ export async function selectExperts(
                 type: expertType, // Explicitly set the type based on what was selected
                 expertise: Array.isArray(expert.expertise) ? expert.expertise :
                     (expert.expertise ? [expert.expertise] : []),
+                identifier: expertType === 'ai' ? `AI-${Math.floor(1000 + Math.random() * 9000)}` : undefined
             }));
 
             console.log(`Successfully selected ${experts.length} ${expertType} experts`);
@@ -60,21 +61,37 @@ export async function selectExperts(
     }
 }
 
-function getSystemPrompt(expertType: 'historical' | 'domain'): string {
-    return `You are an expert debate coordinator. Your task is to select 2 ${expertType === 'historical' ? 'historical figures' : 'domain experts'} who would have interesting and contrasting perspectives on a given topic.
+function getSystemPrompt(expertType: 'historical' | 'ai'): string {
+    if (expertType === 'historical') {
+        return `You are an expert debate coordinator. Your task is to select 2 historical figures who would have interesting and contrasting perspectives on a given topic.
 
 Return a JSON object with an "experts" array containing objects with these fields:
-1. name: Full name ${expertType === 'domain' ? 'with relevant title (Dr., Prof., etc.)' : 'of the historical figure'}
-2. background: Brief description of ${expertType === 'historical' ? 'who they were' : 'their field and credentials'} (1-2 sentences)
+1. name: Full name of the historical figure
+2. background: Brief description of who they were (1-2 sentences)
 3. stance: One expert should be 'pro' and one should be 'con' regarding the topic
-4. perspective: ${expertType === 'historical' ? 'How they would approach this topic based on their historical context' : 'Their approach to this topic based on their expertise'} (2-3 sentences)
-5. expertise: An array of 2-4 short phrases describing their ${expertType === 'historical' ? 'areas of expertise or knowledge domains' : 'specific areas of expertise or specializations'}
+4. perspective: How they would approach this topic based on their historical context (2-3 sentences)
+5. expertise: An array of 2-4 short phrases describing their areas of expertise or knowledge domains
 
 Format your response as a valid JSON object with an "experts" array containing these expert objects.`;
+    } else {
+        return `You are an expert debate coordinator. Your task is to select 2 fictional AI subject experts who would have interesting and contrasting perspectives on a given topic.
+
+Return a JSON object with an "experts" array containing objects with these fields:
+1. name: IMPORTANT - Use "AI Expert" naming format like "AI Economics Expert" or "AI Climate Science Expert" - DO NOT use human-like names or real people's names
+2. background: Brief description of their field and credentials (1-2 sentences)
+3. stance: One expert should be 'pro' and one should be 'con' regarding the topic
+4. perspective: Their approach to this topic based on their expertise (2-3 sentences)
+5. expertise: An array of 2-4 short phrases describing their specific areas of expertise or specializations
+
+Important: These are AI entities, not real people. Their names should clearly indicate they are AI specialists, not human experts.
+
+Format your response as a valid JSON object with an "experts" array containing these expert objects.`;
+    }
 }
 
-function getUserPrompt(topic: string, expertType: 'historical' | 'domain', count: number): string {
-    return `Select ${count} ${expertType === 'historical' ? 'historical figures' : 'domain experts'} who would have the most interesting and contrasting perspectives on the topic: "${topic}".
+function getUserPrompt(topic: string, expertType: 'historical' | 'ai', count: number): string {
+    if (expertType === 'historical') {
+        return `Select ${count} historical figures who would have the most interesting and contrasting perspectives on the topic: "${topic}".
 
 Ensure you select experts with opposing viewpoints - one should be generally "pro" and one should be generally "con" on this topic.
 
@@ -86,4 +103,22 @@ Make sure each expert has:
 - An array of expertise areas (2-4 specific domains)
 
 Return only a JSON object with an "experts" array.`;
+    } else {
+        return `Select ${count} fictional AI subject experts who would have the most interesting and contrasting perspectives on the topic: "${topic}".
+
+IMPORTANT: DO NOT use human-sounding names or real people's names. Instead, use descriptive AI-focused names like "AI Economics Expert" or "AI Climate Science Expert".
+
+Ensure you select experts with opposing viewpoints - one should be generally "pro" and one should be generally "con" on this topic.
+
+Make sure each expert has:
+- A name clearly identifying them as an AI entity (e.g., "AI Healthcare Expert")
+- A background description
+- A clear stance (one pro, one con)
+- A detailed perspective on the topic
+- An array of expertise areas (2-4 specific domains)
+
+These AI experts will each be assigned a unique identifier (like AI-4287) in the system automatically.
+
+Return only a JSON object with an "experts" array.`;
+    }
 } 

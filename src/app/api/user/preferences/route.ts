@@ -42,7 +42,7 @@ export async function GET() {
                     profilePicture: session.user.image || null,
                     preferredLanguage: 'en',
                     preferredTopics: [],
-                    expertTypes: ['domain', 'historical'],
+                    expertTypes: ['ai', 'historical'],
                     settings: {
                         notifications: true,
                         theme: 'system'

@@ -23,7 +23,7 @@ export default function SettingsTestPage() {
   const toggleTheme = async () => {
     const newTheme = preferences.theme === 'light' ? 'dark' : 'light';
     const success = await updatePreferences({ theme: newTheme });
-    
+
     if (success) {
       toast({
         title: "Theme Updated",
@@ -41,7 +41,7 @@ export default function SettingsTestPage() {
   const toggleVoiceSynthesis = async () => {
     const newValue = !preferences.useVoiceSynthesis;
     const success = await updatePreferences({ useVoiceSynthesis: newValue });
-    
+
     if (success) {
       toast({
         title: "Voice Synthesis Updated",
@@ -57,9 +57,9 @@ export default function SettingsTestPage() {
   };
 
   const changeExpertType = async () => {
-    const newType = preferences.defaultExpertType === 'historical' ? 'domain' : 'historical';
+    const newType = preferences.defaultExpertType === 'historical' ? 'ai' : 'historical';
     const success = await updatePreferences({ defaultExpertType: newType });
-    
+
     if (success) {
       toast({
         title: "Expert Type Updated",
@@ -74,6 +74,9 @@ export default function SettingsTestPage() {
     }
   };
 
+  // Update text display
+  const expertTypeDisplay = preferences.defaultExpertType === 'historical' ? 'Historical Figures' : 'AI Subject Experts';
+
   if (!isLoaded) {
     return <div className="container py-8">Loading settings...</div>;
   }
@@ -81,7 +84,7 @@ export default function SettingsTestPage() {
   return (
     <div className="container py-8">
       <h1 className="text-3xl font-bold mb-8">Settings Test Page</h1>
-      
+
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
@@ -102,12 +105,12 @@ export default function SettingsTestPage() {
                 <span className="font-medium">Voice Synthesis:</span> {preferences.useVoiceSynthesis ? 'Enabled' : 'Disabled'}
               </div>
               <div>
-                <span className="font-medium">Default Expert Type:</span> {preferences.defaultExpertType}
+                <span className="font-medium">Default Expert Type:</span> {expertTypeDisplay}
               </div>
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader>
             <CardTitle>Test Actions</CardTitle>
@@ -128,7 +131,7 @@ export default function SettingsTestPage() {
           </CardContent>
         </Card>
       </div>
-      
+
       <div className="mt-8">
         <Card>
           <CardHeader>
@@ -137,10 +140,10 @@ export default function SettingsTestPage() {
           </CardHeader>
           <CardContent>
             <pre className="bg-gray-100 dark:bg-gray-800 p-4 rounded-md overflow-auto">
-              {JSON.stringify({ 
-                preferences, 
-                currentTheme: theme, 
-                themeApplied 
+              {JSON.stringify({
+                preferences,
+                currentTheme: theme,
+                themeApplied
               }, null, 2)}
             </pre>
           </CardContent>

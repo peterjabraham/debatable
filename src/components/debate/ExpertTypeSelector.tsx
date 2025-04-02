@@ -3,7 +3,7 @@
 import React from 'react';
 import { useDebateStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { History, Briefcase } from 'lucide-react';
+import { History, Brain } from 'lucide-react';
 
 export function ExpertTypeSelector() {
     const { expertType, setExpertType } = useDebateStore();
@@ -21,8 +21,8 @@ export function ExpertTypeSelector() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div
                             className={`border rounded-lg p-4 cursor-pointer transition-all ${expertType === 'historical'
-                                    ? 'border-primary bg-primary/5'
-                                    : 'hover:border-primary/50'
+                                ? 'border-primary bg-primary/5'
+                                : 'hover:border-primary/50'
                                 }`}
                             onClick={() => setExpertType('historical')}
                         >
@@ -37,19 +37,20 @@ export function ExpertTypeSelector() {
                         </div>
 
                         <div
-                            className={`border rounded-lg p-4 cursor-pointer transition-all ${expertType === 'domain'
-                                    ? 'border-primary bg-primary/5'
-                                    : 'hover:border-primary/50'
+                            className={`border rounded-lg p-4 cursor-pointer transition-all ${expertType === 'ai'
+                                ? 'border-primary bg-primary/5'
+                                : 'hover:border-primary/50'
                                 }`}
-                            onClick={() => setExpertType('domain')}
+                            onClick={() => setExpertType('ai')}
                         >
                             <div className="flex items-center gap-3 mb-2">
-                                <Briefcase className="h-5 w-5 text-primary" />
-                                <h3 className="font-medium">Domain Specialists</h3>
+                                <Brain className="h-5 w-5 text-primary" />
+                                <h3 className="font-medium">AI Subject Experts</h3>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                Engage with AI-powered domain experts who specialize in specific fields
-                                like technology, medicine, economics, and more.
+                                Engage with AI subject experts with unique identifiers (like AI-4287)
+                                who specialize in specific fields of knowledge and can be recalled for
+                                future debates.
                             </p>
                         </div>
                     </div>

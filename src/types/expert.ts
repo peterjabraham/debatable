@@ -15,8 +15,9 @@ export interface Expert {
     background: string;
     stance: 'pro' | 'con';
     perspective: string;
-    type: 'historical' | 'domain';
+    type: 'historical' | 'ai';
     expertise: string[];
+    identifier?: string;
     voiceId?: string;
     sourceReferences?: SourceReference[];
 }
@@ -28,7 +29,8 @@ interface BaseExpert {
     title: string;
     perspective: string;
     bio: string;
-    type: 'historical' | 'domain';
+    type: 'historical' | 'ai';
+    identifier?: string;
     voiceId?: string;
     sourceReferences?: SourceReference[];
 }
@@ -39,6 +41,6 @@ export interface HistoricalExpert extends BaseExpert {
 }
 
 export interface DomainExpert extends BaseExpert {
-    type: 'domain';
+    type: 'ai';
     field: string;
 } 

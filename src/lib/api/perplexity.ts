@@ -3,17 +3,22 @@
  * 
  * This module provides functions to interact with the Perplexity API
  * for fetching relevant links and information based on expert names and topics.
+ * 
+ * NOTE: This implementation uses the Chat Completions API instead of the Search API
+ * since the current API key only has access to chat completions.
  */
 
-import { makeRequest } from './requestManager';
+// Import node-fetch for server-side fetching
+import nodeFetch from 'node-fetch';
 
-// Define the Perplexity API key environment variable
+// Define the Perplexity API key and base URL
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
-
-// Define the Perplexity API base URL
 const PERPLEXITY_API_BASE_URL = 'https://api.perplexity.ai';
 
-// Interface for Perplexity API response
+// Use the appropriate fetch implementation based on environment
+const fetchImpl = typeof window === 'undefined' ? nodeFetch : window.fetch;
+
+// Interface for search result
 interface PerplexitySearchResult {
     id: string;
     url: string;
@@ -24,16 +29,145 @@ interface PerplexitySearchResult {
     source?: string;
 }
 
-interface PerplexityApiResponse {
-    query: string;
-    results: PerplexitySearchResult[];
-    search_id: string;
+// Simple rate limit tracker
+export const rateLimitTracker = {
+    lastCallTime: 0,
+    consecutiveErrors: 0,
+    isRateLimited: false,
+    cooldownUntil: 0,
+
+    // Cache for results to prevent duplicate calls
+    resultCache: new Map<string, any>(),
+
+    // Check if we should throttle API calls
+    shouldThrottle(): boolean {
+        const now = Date.now();
+
+        // If we're in a cooldown period due to rate limiting
+        if (this.isRateLimited && now < this.cooldownUntil) {
+            console.log(`Perplexity API in cooldown until ${new Date(this.cooldownUntil).toISOString()}`);
+            return true;
+        }
+
+        // If we're making calls too quickly (more than 1 per second)
+        const timeSinceLastCall = now - this.lastCallTime;
+        if (timeSinceLastCall < 1000) {
+            console.log(`Throttling Perplexity API call, last call was ${timeSinceLastCall}ms ago`);
+            return true;
+        }
+
+        // Allow the call
+        this.lastCallTime = now;
+        return false;
+    },
+
+    // Handle a rate limit error
+    handleRateLimitError() {
+        this.consecutiveErrors++;
+        this.isRateLimited = true;
+
+        // Exponential backoff: 5s, 10s, 20s, 40s, etc. up to 2 minutes
+        const backoffTime = Math.min(5000 * Math.pow(2, this.consecutiveErrors - 1), 120000);
+        this.cooldownUntil = Date.now() + backoffTime;
+
+        console.log(`Perplexity API rate limited, cooling down for ${backoffTime / 1000}s`);
+    },
+
+    // Handle a successful call
+    handleSuccess() {
+        this.consecutiveErrors = 0;
+        this.isRateLimited = false;
+    },
+
+    // Get cached result if available
+    getCachedResult(key: string): any | null {
+        return this.resultCache.get(key) || null;
+    },
+
+    // Cache a result
+    cacheResult(key: string, result: any): void {
+        this.resultCache.set(key, result);
+
+        // Keep the cache from growing too large (max 50 items)
+        if (this.resultCache.size > 50) {
+            // Remove oldest entry
+            const firstKey = this.resultCache.keys().next().value;
+            this.resultCache.delete(firstKey);
+        }
+    }
+};
+
+/**
+ * Extracts JSON from a markdown-formatted string
+ * The Chat API often returns JSON wrapped in a markdown code block
+ */
+function extractJsonFromMarkdown(content: string): any {
+    try {
+        // Try to parse as-is first
+        return JSON.parse(content);
+    } catch (e) {
+        // Extract JSON from markdown code block if present
+        const jsonBlockRegex = /```(?:json)?\s*(\[[\s\S]*?\])\s*```/;
+        const jsonMatch = content.match(jsonBlockRegex);
+
+        if (jsonMatch && jsonMatch[1]) {
+            try {
+                return JSON.parse(jsonMatch[1]);
+            } catch (jsonError) {
+                console.error('Failed to parse extracted JSON:', jsonError);
+            }
+        }
+
+        // As a last resort, try to manually extract data using regex
+        try {
+            const titles = content.match(/title['"]\s*:\s*['"](.*?)['"]/g);
+            const urls = content.match(/url['"]\s*:\s*['"](.*?)['"]/g);
+            const snippets = content.match(/snippet['"]\s*:\s*['"](.*?)['"]/g);
+
+            if (titles && urls && snippets && titles.length === urls.length && urls.length === snippets.length) {
+                const manualReadings = [];
+                for (let i = 0; i < titles.length; i++) {
+                    const title = titles[i].match(/:\s*['"](.*?)['"]/)[1];
+                    const url = urls[i].match(/:\s*['"](.*?)['"]/)[1];
+                    const snippet = snippets[i].match(/:\s*['"](.*?)['"]/)[1];
+
+                    manualReadings.push({
+                        id: `manual-${Date.now()}-${i}`,
+                        title,
+                        url,
+                        snippet
+                    });
+                }
+
+                return manualReadings;
+            }
+        } catch (manualError) {
+            console.error('Failed manual extraction:', manualError);
+        }
+
+        throw new Error('Could not extract valid JSON from response');
+    }
 }
 
 /**
- * Fetches recommended reading links from Perplexity API based on expert name and topic
+ * Server-side fetch implementation for Perplexity API
+ * This function handles the API call on the server
+ */
+async function serverFetchFromPerplexity(url: string, options: any) {
+    try {
+        console.log('Server fetch:', url);
+        const response = await nodeFetch(url, options);
+        return response;
+    } catch (error) {
+        console.error('Server fetch error:', error);
+        throw error;
+    }
+}
+
+/**
+ * Fetches recommended reading links using the Chat Completions API
  * 
- * @param expertName - The name of the expert
+ * @param expertName - The name or role of the expert
  * @param topic - The debate topic
  * @returns Promise with an array of search results
  */
@@ -42,121 +176,349 @@ export async function getExpertRecommendedReading(
     topic: string
 ): Promise<PerplexitySearchResult[]> {
     try {
-        // Create a search query that combines the expert name and topic
-        const query = `${expertName} ${topic} research papers academic articles`;
+        // Create a cache key from the expert name and topic
+        const cacheKey = `${expertName}:${topic}`;
 
-        // Make the request to the Perplexity API
-        const response = await fetch(`${PERPLEXITY_API_BASE_URL}/search`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${PERPLEXITY_API_KEY}`
-            },
-            body: JSON.stringify({
-                query,
-                max_results: 5, // Limit to 5 results per expert
-                search_depth: 'advanced' // Use advanced search for better results
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Perplexity API error: ${response.status} ${response.statusText}`);
+        // Check the cache first
+        const cachedResult = rateLimitTracker.getCachedResult(cacheKey);
+        if (cachedResult) {
+            console.log(`Using cached Perplexity results for ${expertName} on ${topic}`);
+            return cachedResult;
         }
 
-        const data = await response.json() as PerplexityApiResponse;
+        // Check for mock data flag
+        if (process.env.USE_MOCK_DATA === 'true') {
+            console.log('Using mock data for recommended readings');
+            const mockData = generateMockReadings(expertName, topic);
+            rateLimitTracker.cacheResult(cacheKey, mockData);
+            return mockData;
+        }
 
-        // Return the results
-        return data.results;
+        // Check if we should throttle this request
+        if (rateLimitTracker.shouldThrottle()) {
+            console.log(`Perplexity API call throttled for ${expertName}, using mock data`);
+            const mockData = generateMockReadings(expertName, topic);
+            return mockData;
+        }
+
+        // Handle client-side vs server-side
+        const isClient = typeof window !== 'undefined';
+
+        if (isClient) {
+            // In the browser, use the API route to avoid CORS issues
+            console.log('Running in client environment, using API route');
+            try {
+                const response = await fetch('/api/perplexity/single-expert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        expertName,
+                        topic
+                    })
+                });
+
+                if (!response.ok) {
+                    // Handle rate limit specifically
+                    if (response.status === 429) {
+                        rateLimitTracker.handleRateLimitError();
+                        const mockData = generateMockReadings(expertName, topic);
+                        return mockData;
+                    }
+
+                    throw new Error(`API route error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const readings = data.readings || [];
+
+                // Cache the result on success
+                rateLimitTracker.cacheResult(cacheKey, readings);
+                rateLimitTracker.handleSuccess();
+
+                return readings;
+            } catch (clientError) {
+                console.error('Error fetching through API route:', clientError);
+                return generateMockReadings(expertName, topic);
+            }
+        }
+
+        // Server-side code - direct API access
+        console.log('Running in server environment, using direct API access');
+
+        // Create a prompt for the Chat API
+        const prompt = `
+        As a ${expertName}, please provide 3 recommended academic readings related to "${topic}".
+        Format each recommendation with a title, URL, and short description (snippet).
+        
+        Return the results in the following JSON format:
+        [
+            {
+                "title": "Title of Paper 1",
+                "url": "https://example.com/paper1",
+                "snippet": "Brief description of the paper and why it's relevant"
+            },
+            {
+                "title": "Title of Paper 2",
+                "url": "https://example.com/paper2",
+                "snippet": "Brief description of the paper and why it's relevant"
+            },
+            {
+                "title": "Title of Paper 3",
+                "url": "https://example.com/paper3",
+                "snippet": "Brief description of the paper and why it's relevant"
+            }
+        ]
+        `;
+
+        // Make the request to the Perplexity Chat API
+        try {
+            const requestOptions = {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${PERPLEXITY_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: 'sonar',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'You are a helpful assistant specialized in providing academic reading recommendations. Always format your response as valid JSON.'
+                        },
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ]
+                })
+            };
+
+            // Use the server-specific implementation for Node.js
+            const response = await serverFetchFromPerplexity(
+                `${PERPLEXITY_API_BASE_URL}/chat/completions`,
+                requestOptions
+            );
+
+            if (!response.ok) {
+                // Handle rate limiting
+                if (response.status === 429) {
+                    console.error('Perplexity API rate limited');
+                    rateLimitTracker.handleRateLimitError();
+                    const mockData = generateMockReadings(expertName, topic);
+                    return mockData;
+                }
+
+                console.error(`Perplexity API error: ${response.status} ${response.statusText}`);
+                return generateMockReadings(expertName, topic);
+            }
+
+            const data = await response.json();
+
+            if (!data.choices || !data.choices.length) {
+                console.error('Invalid response format from Perplexity API');
+                return generateMockReadings(expertName, topic);
+            }
+
+            // Extract and process the content
+            const content = data.choices[0].message.content;
+            const readings = extractJsonFromMarkdown(content);
+
+            // Add IDs to readings if they don't have them
+            const processedReadings = readings.map((reading: any, index: number) => ({
+                id: reading.id || `perplexity-${Date.now()}-${index}`,
+                url: reading.url,
+                title: reading.title,
+                snippet: reading.snippet
+            }));
+
+            // Cache the successful result
+            rateLimitTracker.cacheResult(cacheKey, processedReadings);
+            rateLimitTracker.handleSuccess();
+
+            return processedReadings;
+        } catch (fetchError) {
+            console.error('Network error fetching from Perplexity API:', fetchError);
+            console.log('Falling back to mock data due to network error');
+            return generateMockReadings(expertName, topic);
+        }
     } catch (error) {
-        console.error('Error fetching expert recommended reading:', error);
-        // Return an empty array in case of error
-        return [];
+        console.error('Error in getExpertRecommendedReading:', error);
+        return generateMockReadings(expertName, topic);
     }
 }
 
 /**
  * Fetches recommended reading links for multiple experts on a topic
  * 
- * @param experts - Array of expert names
- * @param topic - The debate topic
- * @returns Promise with a map of expert names to their recommended reading links
+ * @param experts - Array of experts with their topics
+ * @returns Promise with an array of expert readings
  */
 export async function getMultiExpertRecommendedReading(
-    experts: string[],
-    topic: string
-): Promise<Record<string, PerplexitySearchResult[]>> {
-    console.log('getMultiExpertRecommendedReading called with:', { experts, topic });
-    console.log('NEXT_PUBLIC_USE_REAL_API:', process.env.NEXT_PUBLIC_USE_REAL_API);
-
+    experts: Array<{ role: string, topic: string }> | Array<{ name: string, type?: string, expertise?: string | string[] }>
+): Promise<any[]> {
     try {
-        console.log('Making request to /api/perplexity');
-        const response = await fetch('/api/perplexity', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ experts, topic }),
-        });
-
-        if (!response.ok) {
-            console.error('API error:', {
-                status: response.status,
-                statusText: response.statusText,
-                experts,
-                topic
-            });
-            throw new Error(`API error: ${response.status} ${response.statusText}`);
+        if (!Array.isArray(experts) || experts.length === 0) {
+            throw new Error('Invalid experts array');
         }
 
-        const data = await response.json();
-        console.log('API response:', data);
-        return data;
+        // Check for mock data flag
+        if (process.env.USE_MOCK_DATA === 'true') {
+            console.log('Using mock data for multi-expert recommended readings');
+            return generateMockMultiExpertReadings(experts);
+        }
+
+        // Handle client-side vs server-side
+        const isClient = typeof window !== 'undefined';
+
+        if (isClient) {
+            // Create a cache key for the entire request
+            const cacheKey = `multi:${JSON.stringify(experts)}`;
+
+            // Check the cache first
+            const cachedResult = rateLimitTracker.getCachedResult(cacheKey);
+            if (cachedResult) {
+                console.log('Using cached multi-expert Perplexity results');
+                return cachedResult;
+            }
+
+            // In the browser, use the API route to avoid CORS issues
+            console.log('Running in client environment, using API route for multi-expert');
+            try {
+                const response = await fetch('/api/perplexity', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        experts,
+                        topic: 'role' in experts[0] ? experts[0].topic : ''
+                    })
+                });
+
+                if (!response.ok) {
+                    // Handle rate limiting
+                    if (response.status === 429) {
+                        rateLimitTracker.handleRateLimitError();
+                        return generateMockMultiExpertReadings(experts);
+                    }
+
+                    throw new Error(`API route error: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Convert the response format to what we expect
+                const results = Object.entries(data).map(([expertName, readings]) => ({
+                    expert: expertName,
+                    readings
+                }));
+
+                // Cache successful result
+                rateLimitTracker.cacheResult(cacheKey, results);
+                rateLimitTracker.handleSuccess();
+
+                return results;
+            } catch (clientError) {
+                console.error('Error fetching through API route:', clientError);
+                return generateMockMultiExpertReadings(experts);
+            }
+        }
+
+        // Server-side processing of each expert in parallel but with rate limiting
+        console.log('Running in server environment, direct API access for multi-expert');
+
+        // To avoid rate limiting, process experts sequentially with delays
+        const results = [];
+        for (const expert of experts) {
+            const expertName = 'role' in expert ? expert.role : expert.name;
+            const topic = 'role' in expert ? expert.topic :
+                Array.isArray(expert.expertise) ? expert.expertise[0] :
+                    (expert.expertise as string || 'general topics');
+
+            try {
+                // Add a small delay between each expert to avoid rate limiting
+                if (results.length > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+
+                const readings = await getExpertRecommendedReading(expertName, topic);
+                results.push({
+                    expert: expertName,
+                    readings
+                });
+            } catch (error) {
+                console.error(`Error fetching readings for expert ${expertName}:`, error);
+                results.push({
+                    expert: expertName,
+                    readings: generateMockReadings(expertName, topic),
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                });
+            }
+        }
+
+        return results;
     } catch (error) {
-        console.error('Error fetching multi-expert recommended reading:', error);
-        throw error; // Let the component handle the error
+        console.error('Error in getMultiExpertRecommendedReading:', error);
+
+        // Generate mock data for all experts as fallback
+        return Array.isArray(experts) ? experts.map(expert => {
+            const expertName = 'role' in expert ? expert.role : expert.name;
+            const topic = 'role' in expert ? expert.topic :
+                Array.isArray(expert.expertise) ? expert.expertise[0] :
+                    (expert.expertise as string || 'general topics');
+
+            return {
+                expert: expertName,
+                readings: generateMockReadings(expertName, topic),
+                error: 'Failed to fetch real data'
+            };
+        }) : [];
     }
 }
 
 /**
- * Mocks the Perplexity API response for testing or when the API is unavailable
- * 
- * @param expertName - The name of the expert
- * @param topic - The debate topic
- * @returns Mock search results
+ * Generates mock readings for development/testing when API is unavailable
  */
-export function getMockExpertRecommendedReading(
-    expertName: string,
-    topic: string
-): PerplexitySearchResult[] {
-    // Generate a deterministic but unique ID based on expert and topic
-    const generateId = (text: string) => {
-        return Array.from(text)
-            .reduce((acc, char) => acc + char.charCodeAt(0), 0)
-            .toString(16);
-    };
+function generateMockReadings(expertName: string, topic: string): PerplexitySearchResult[] {
+    console.log(`Generating mock readings for ${expertName} on topic: ${topic}`);
 
-    // Create mock results
     return [
         {
-            id: `${generateId(expertName + topic + '1')}`,
-            url: `https://example.com/papers/${expertName.toLowerCase().replace(/\s+/g, '-')}-1`,
-            title: `${expertName}'s Research on ${topic} - Key Findings`,
-            snippet: `Comprehensive analysis by ${expertName} exploring the implications of ${topic} with groundbreaking insights and methodologies.`
+            id: `mock-${Date.now()}-1`,
+            url: 'https://example.com/paper1',
+            title: `${expertName}'s Research on ${topic}`,
+            snippet: `This is a mock research paper about ${expertName}'s area of expertise related to ${topic}. It contains valuable insights and data.`
         },
         {
-            id: `${generateId(expertName + topic + '2')}`,
-            url: `https://example.com/papers/${expertName.toLowerCase().replace(/\s+/g, '-')}-2`,
-            title: `The Future of ${topic}: ${expertName}'s Perspective`,
-            snippet: `In this seminal paper, ${expertName} discusses future trends and developments in ${topic}, offering a unique perspective based on years of research.`,
-            published_date: '2023-05-15'
+            id: `mock-${Date.now()}-2`,
+            url: 'https://example.com/paper2',
+            title: `Recent Developments in ${topic}`,
+            snippet: 'This paper explores recent developments and breakthroughs in the field with practical applications.'
         },
         {
-            id: `${generateId(expertName + topic + '3')}`,
-            url: `https://example.com/papers/${expertName.toLowerCase().replace(/\s+/g, '-')}-3`,
-            title: `Critical Analysis of ${topic} Developments`,
-            snippet: `${expertName} provides a critical analysis of recent developments in ${topic}, challenging conventional wisdom and proposing alternative frameworks.`,
-            published_date: '2022-11-03',
-            author: expertName
+            id: `mock-${Date.now()}-3`,
+            url: 'https://example.com/paper3',
+            title: 'Comprehensive Literature Review',
+            snippet: 'A thorough review of existing literature that synthesizes current knowledge and identifies gaps.'
         }
     ];
+}
+
+/**
+ * Generates mock readings for multiple experts when API is unavailable
+ */
+function generateMockMultiExpertReadings(experts: any[]): any[] {
+    return experts.map(expert => {
+        const expertName = 'role' in expert ? expert.role : expert.name;
+        const topic = 'role' in expert ? expert.topic :
+            Array.isArray(expert.expertise) ? expert.expertise[0] :
+                (expert.expertise as string || 'general topics');
+
+        return {
+            expert: expertName,
+            readings: generateMockReadings(expertName, topic)
+        };
+    });
 } 

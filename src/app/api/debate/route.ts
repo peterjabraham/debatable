@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateDebateResponseServer } from '@/lib/openai';
-import { v4 as uuidv4 } from 'uuid';
+import { getExpertRecommendedReading } from '@/lib/api/perplexity';
+import type { ExpertProfile } from '@/lib/openai';
 
 // Function to sanitize names for OpenAI API compatibility
 function sanitizeNameForOpenAI(name: string | undefined): string | undefined {
@@ -53,124 +54,46 @@ const MOCK_EXPERTS = [
     }
 ];
 
-export async function GET(request: NextRequest) {
-    try {
-        const url = new URL(request.url);
-        const path = url.pathname;
-
-        // General debate API - return topics
-        if (path === '/api/debate') {
-            return NextResponse.json({
-                topics: MOCK_TOPICS,
-                message: 'Here are some debate topics'
-            });
-        }
-
-        // Expert retrieval for topic
-        if (path.includes('/experts')) {
-            const topicParam = url.searchParams.get('topic');
-            const typeParam = url.searchParams.get('type') || 'domain';
-
-            return NextResponse.json({
-                experts: MOCK_EXPERTS,
-                message: `Experts for topic: ${topicParam || 'general'}`
-            });
-        }
-
-        // Default response
-        return NextResponse.json({
-            message: 'Debate API endpoints available',
-            endpoints: ['/api/debate', '/api/debate/experts']
-        });
-
-    } catch (error) {
-        console.error('[Debate API GET] Error:', error);
-        return NextResponse.json(
-            { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
-            { status: 500 }
-        );
-    }
+export async function GET() {
+    return NextResponse.json({
+        status: 'ok',
+        message: 'Debate API is running'
+    });
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
     try {
-        const requestData = await request.json();
+        const { topic, expert } = await request.json();
 
-        // Extract data from request
-        const { messages, expert, topic } = requestData;
-
-        if (!messages || !expert) {
+        if (!topic || !expert) {
             return NextResponse.json(
-                { error: 'Missing required parameters: messages, expert' },
+                { error: 'Missing required fields: topic and expert' },
                 { status: 400 }
             );
         }
 
-        // Process message names to ensure OpenAI compatibility
-        const sanitizedMessages = messages.map(message => {
-            // Use the apiName field if available, or sanitize the name or speaker field
-            const name = message.apiName ||
-                sanitizeNameForOpenAI(message.name || message.speaker);
+        // Generate debate response
+        const response = await generateDebateResponseServer(
+            [
+                { role: 'system', content: 'You are a helpful assistant' },
+                { role: 'user', content: `As ${expert.name}, what are your thoughts on ${topic}?` }
+            ],
+            expert as ExpertProfile
+        );
 
-            return {
-                ...message,
-                name: name
-            };
+        // Get recommended reading
+        const recommendedReading = await getExpertRecommendedReading(expert.name, topic);
+
+        return NextResponse.json({
+            ...response,
+            recommendedReading,
+            apiSource: 'openai'
         });
 
-        try {
-            // Attempt to use OpenAI API to generate a response
-            console.log(`Generating debate response via OpenAI for expert ${expert.name}`);
-
-            // Make sure expert name is sanitized too
-            const sanitizedExpert = {
-                ...expert,
-                name: sanitizeNameForOpenAI(expert.name)
-            };
-
-            const result = await generateDebateResponseServer(sanitizedMessages, sanitizedExpert);
-
-            return NextResponse.json({
-                response: result.response,
-                usage: result.usage,
-                expert: expert.name,
-                topic,
-                timestamp: new Date().toISOString(),
-                apiSource: 'openai'
-            });
-
-        } catch (openaiError) {
-            // If OpenAI fails, log the error and fall back to mock data
-            console.error('[Debate API] OpenAI error:', openaiError);
-            console.log('[Debate API] Falling back to mock response');
-
-            // Create a mock response
-            const mockResponse = {
-                response: `As ${expert.name}, I would offer this perspective on ${topic || 'this topic'}: 
-                This is a sample response generated because the OpenAI API was not available.
-                ${expert.stance === 'pro'
-                        ? 'I generally support this position based on my expertise.'
-                        : 'I have some reservations about this position based on my expertise.'}
-                If you're seeing this message, it means we're using mock data instead of real AI responses.`,
-                usage: {
-                    promptTokens: 150,
-                    completionTokens: 100,
-                    totalTokens: 250,
-                    cost: 0.01
-                },
-                expert: expert.name,
-                topic,
-                timestamp: new Date().toISOString(),
-                apiSource: 'mock',
-                error: openaiError instanceof Error ? openaiError.message : 'OpenAI API error'
-            };
-
-            return NextResponse.json(mockResponse);
-        }
     } catch (error) {
-        console.error('[Debate API POST] Error:', error);
+        console.error('[Debate API] Error:', error);
         return NextResponse.json(
-            { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
+            { error: 'Failed to generate debate response' },
             { status: 500 }
         );
     }

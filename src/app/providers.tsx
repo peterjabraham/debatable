@@ -3,20 +3,5 @@
 // Re-export the Providers from lib/providers
 export { Providers } from '@/lib/providers';
 
-import { ThemeProvider } from "@/components/ThemeProvider";
-import { NotificationProvider } from "@/components/ui/notification";
-
-export function Providers({ children }: { children: React.ReactNode }) {
-    return (
-        <ThemeProvider
-            attribute="class"
-            defaultTheme="dark"
-            enableSystem
-            disableTransitionOnChange
-        >
-            <NotificationProvider>
-                {children}
-            </NotificationProvider>
-        </ThemeProvider>
-    );
-} 
+// Remove the duplicate Providers definition
+// We'll use the one from lib/providers.tsx that has all the providers we need 

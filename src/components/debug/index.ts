@@ -1,1 +1,2 @@
-export { EnvDebug } from './EnvDebug'; 
+export * from './EnvDebug';
+export * from './PerplexityDebug'; 

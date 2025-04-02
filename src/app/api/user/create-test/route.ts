@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
             profilePicture: null,
             preferredLanguage: 'en',
             preferredTopics: [],
-            expertTypes: ['domain', 'historical'],
+            expertTypes: ['ai', 'historical'],
             settings: {
                 notifications: true,
                 theme: 'system'

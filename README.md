@@ -142,6 +142,75 @@ DEBUG_ENABLED=true
 DEBUG_LEVEL=verbose
 ```
 
+## Port Management
+
+When running the development server, it's important to ensure the application consistently runs on port 3000 to maintain proper API functionality and prevent connection issues.
+
+### Port Conflict Solutions
+
+If you encounter the warning `Port 3000 is in use, trying 3001 instead`, here are several ways to resolve this:
+
+1. **Manually Kill the Process**
+   ```bash
+   # Find processes using port 3000
+   lsof -i:3000
+   
+   # Kill the process
+   kill $(lsof -t -i:3000)
+   ```
+
+2. **Create an Automated Start Script**
+   Create a `start.sh` script in your project root:
+   ```bash
+   #!/bin/bash
+   # Kill any process using port 3000
+   lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+   # Start the app
+   npm run dev
+   ```
+   Make it executable: `chmod +x start.sh`
+   
+3. **Use Docker for Development**
+   Create a `docker-compose.yml` file:
+   ```yaml
+   version: '3'
+   services:
+     debate-app:
+       build: .
+       ports:
+         - "3000:3000"
+       volumes:
+         - .:/app
+         - /app/node_modules
+       environment:
+         - NODE_ENV=development
+   ```
+
+4. **Specify Port in Package.json**
+   Update your npm scripts in package.json:
+   ```json
+   "scripts": {
+     "dev": "next dev -p 3000",
+     "build": "next build",
+     "start": "next start -p 3000"
+   }
+   ```
+
+5. **Use Cross-Env for Environment Variable Management**
+   ```bash
+   npm install --save-dev cross-env
+   ```
+   Then update your scripts:
+   ```json
+   "scripts": {
+     "dev": "cross-env PORT=3000 next dev",
+     "build": "next build",
+     "start": "cross-env PORT=3000 next start"
+   }
+   ```
+
+Choosing one of these approaches will help ensure the application consistently runs on port 3000, maintaining proper API functionality.
+
 ### Running in Production Mode
 After building, start the production server with:
 ```bash
@@ -976,3 +1045,72 @@ USE_MOCK_DATA=true
 ```
 
 This will use a simple in-memory storage for document chunks and basic keyword matching for retrieval.
+
+## Port Management
+
+When running the development server, it's important to ensure the application consistently runs on port 3000 to maintain proper API functionality and prevent connection issues.
+
+### Port Conflict Solutions
+
+If you encounter the warning `Port 3000 is in use, trying 3001 instead`, here are several ways to resolve this:
+
+1. **Manually Kill the Process**
+   ```bash
+   # Find processes using port 3000
+   lsof -i:3000
+   
+   # Kill the process
+   kill $(lsof -t -i:3000)
+   ```
+
+2. **Create an Automated Start Script**
+   Create a `start.sh` script in your project root:
+   ```bash
+   #!/bin/bash
+   # Kill any process using port 3000
+   lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+   # Start the app
+   npm run dev
+   ```
+   Make it executable: `chmod +x start.sh`
+   
+3. **Use Docker for Development**
+   Create a `docker-compose.yml` file:
+   ```yaml
+   version: '3'
+   services:
+     debate-app:
+       build: .
+       ports:
+         - "3000:3000"
+       volumes:
+         - .:/app
+         - /app/node_modules
+       environment:
+         - NODE_ENV=development
+   ```
+
+4. **Specify Port in Package.json**
+   Update your npm scripts in package.json:
+   ```json
+   "scripts": {
+     "dev": "next dev -p 3000",
+     "build": "next build",
+     "start": "next start -p 3000"
+   }
+   ```
+
+5. **Use Cross-Env for Environment Variable Management**
+   ```bash
+   npm install --save-dev cross-env
+   ```
+   Then update your scripts:
+   ```json
+   "scripts": {
+     "dev": "cross-env PORT=3000 next dev",
+     "build": "next build",
+     "start": "cross-env PORT=3000 next start"
+   }
+   ```
+
+Choosing one of these approaches will help ensure the application consistently runs on port 3000, maintaining proper API functionality.

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import fetch from 'cross-fetch';
 import * as cheerio from 'cheerio';
 import OpenAI from 'openai';
+import { extractTextFromUrl } from '@/lib/content-processing/web-scraper';
+import { extractTopicsFromText } from '@/lib/content-processing/topic-extractor';
 
 // Create an OpenAI client
 const openai = new OpenAI({
@@ -117,118 +119,44 @@ class AITopicExtractor {
     }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
     try {
-        const formData = await request.formData();
-        const url = formData.get('url') as string;
+        const { url } = await request.json();
 
         if (!url) {
             return NextResponse.json(
-                { message: 'No URL provided' },
+                { error: 'No URL provided' },
                 { status: 400 }
             );
         }
 
-        // Fetch the web page content
-        const response = await fetch(url);
-        if (!response.ok) {
+        // Extract text from URL
+        const text = await extractTextFromUrl(url);
+        if (!text) {
             return NextResponse.json(
-                { message: `Failed to fetch content from URL: ${response.statusText}` },
+                { error: 'Failed to extract text from URL' },
                 { status: 400 }
             );
         }
 
-        const html = await response.text();
-
-        // Parse the HTML content
-        const $ = cheerio.load(html);
-
-        // Extract text content from the page (removing scripts, styles, etc.)
-        $('script, style, noscript, iframe, object, embed').remove();
-        const textContent = $('body').text().replace(/\s+/g, ' ').trim();
-
-        // Extract metadata
-        const metadata = {
-            url,
-            title: $('title').text() || 'Unknown Title',
-            author: $('meta[name="author"]').attr('content') || 'Unknown Author',
-            publishedDate: $('meta[name="date"]').attr('content') || 'Unknown Date',
-            source: new URL(url).hostname,
-            wordCount: textContent.split(/\s+/).length
-        };
-
-        // Check if OpenAI API key is available
-        if (!process.env.OPENAI_API_KEY) {
-            console.warn("OpenAI API key not found, falling back to mock data");
-            // Return mock data with a warning
-            return NextResponse.json({
-                message: 'Web link processed with mock data (OpenAI API key not configured)',
-                metadata,
-                topics: [
-                    {
-                        title: 'No OpenAI API key configured',
-                        confidence: 1.0,
-                        arguments: [
-                            {
-                                claim: "To use actual topic extraction, you need to configure OPENAI_API_KEY in your .env file",
-                                evidence: "This is a placeholder response because OpenAI API key is not configured."
-                            },
-                            {
-                                claim: "The app is currently using mock data instead of real content analysis",
-                                evidence: "Check your environment variables and make sure OPENAI_API_KEY is set properly."
-                            }
-                        ]
-                    }
-                ]
-            });
-        }
-
-        // Use the AITopicExtractor to analyze the content
-        const topicExtractor = new AITopicExtractor();
-        const extractionResult = await topicExtractor.extractTopics({
-            content: textContent
-        });
-
-        if (!extractionResult.success) {
-            console.error('Topic extraction failed:', extractionResult.error);
+        // Extract topics from text
+        const topics = await extractTopicsFromText(text);
+        if (!topics || topics.length === 0) {
             return NextResponse.json(
-                { message: 'Failed to extract topics from content', error: extractionResult.error },
-                { status: 500 }
+                { error: 'No topics found in content' },
+                { status: 400 }
             );
         }
-
-        // Format the topics for the frontend
-        const formattedTopics = extractionResult.topics.map(topic => {
-            // Convert the arguments to the format expected by the frontend
-            const args = extractionResult.mainArguments
-                .filter(arg => arg.sourceSection.position === extractionResult.topics.indexOf(topic))
-                .map(arg => ({
-                    claim: arg.claim,
-                    evidence: Array.isArray(arg.evidence) ? arg.evidence.join(' ') : arg.evidence
-                }));
-
-            return {
-                title: topic.title,
-                confidence: topic.confidence,
-                arguments: args.length > 0 ? args : [
-                    {
-                        claim: "No specific arguments found for this topic",
-                        evidence: "Consider exploring this topic further for more detailed analysis"
-                    }
-                ]
-            };
-        });
 
         return NextResponse.json({
             message: 'Web link processed successfully',
-            metadata,
-            topics: formattedTopics
+            topics
         });
 
     } catch (error) {
-        console.error('Error processing web link:', error);
+        console.error('[Link API] Error:', error);
         return NextResponse.json(
-            { message: 'Error processing web link', error: (error as Error).message },
+            { error: 'Failed to process web link' },
             { status: 500 }
         );
     }

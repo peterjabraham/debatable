@@ -3,6 +3,7 @@ import { Expert } from '@/types/expert';
 import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
+import { Brain } from 'lucide-react';
 
 interface ExpertCardProps {
     expert: Expert;
@@ -11,6 +12,24 @@ interface ExpertCardProps {
 
 export function ExpertCard({ expert, className }: ExpertCardProps) {
     const { theme } = useTheme();
+    // Treat 'domain' type as 'ai' type
+    const isAiExpert = expert.type === 'ai' || expert.type === 'domain';
+
+    // If this is a domain expert with no identifier, generate one
+    if ((expert.type === 'domain' || expert.type === 'ai') && !expert.identifier) {
+        // Generate a random identifier if none exists
+        expert.identifier = `AI-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        // Ensure name starts with AI if it doesn't already
+        if (!expert.name.startsWith('AI ')) {
+            // Extract expertise to create a better name
+            const expertiseArea = expert.expertise && expert.expertise.length > 0
+                ? expert.expertise[0]
+                : "Subject";
+
+            expert.name = `AI ${expertiseArea} Expert`;
+        }
+    }
 
     return (
         <div
@@ -18,18 +37,36 @@ export function ExpertCard({ expert, className }: ExpertCardProps) {
                 'flex flex-col items-center p-4 rounded-lg border transition-colors duration-200',
                 'border-[hsl(var(--border))]',
                 theme === 'light' ? 'hover:bg-accent/50' : 'hover:bg-accent/50',
+                isAiExpert && 'border-primary/30',
                 className
             )}
         >
             <Avatar className="h-16 w-16 mb-2">
-                <div className={cn(
-                    'w-full h-full flex items-center justify-center text-lg font-semibold',
-                    'bg-muted text-muted-foreground'
-                )}>
-                    {expert.name.charAt(0)}
-                </div>
+                {isAiExpert ? (
+                    <div className={cn(
+                        'w-full h-full flex items-center justify-center',
+                        'bg-primary/10 text-primary'
+                    )}>
+                        <Brain className="h-8 w-8" />
+                    </div>
+                ) : (
+                    <div className={cn(
+                        'w-full h-full flex items-center justify-center text-lg font-semibold',
+                        'bg-muted text-muted-foreground'
+                    )}>
+                        {expert.name.charAt(0)}
+                    </div>
+                )}
             </Avatar>
+
             <h3 className="text-lg font-semibold text-foreground">{expert.name}</h3>
+
+            {isAiExpert && expert.identifier && (
+                <div className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary mb-2 font-mono">
+                    {expert.identifier}
+                </div>
+            )}
+
             <p className={cn(
                 'text-sm text-center mb-2',
                 expert.stance === 'pro'

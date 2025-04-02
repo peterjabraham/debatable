@@ -20,6 +20,8 @@ export interface CacheOperationResult<T> {
 
 export class DebateCache {
     private static CACHE_DURATION = 24 // hours
+    // In-memory cache to reduce Redis calls
+    private static memoryCache: Map<string, { data: DebateCacheData, expiry: number }> = new Map()
 
     /**
      * Store debate data in cache
@@ -27,7 +29,13 @@ export class DebateCache {
     static async setDebate(debateData: DebateCacheData): Promise<CacheOperationResult<void>> {
         try {
             const key = getDebateKey(debateData.id)
+            // Set in Redis
             await setWithExpiry(key, debateData, this.CACHE_DURATION)
+
+            // Set in memory cache with expiry
+            const expiryTime = Date.now() + (this.CACHE_DURATION * 60 * 60 * 1000)
+            this.memoryCache.set(key, { data: { ...debateData }, expiry: expiryTime })
+
             return { success: true }
         } catch (error) {
             console.error('Error setting debate in cache:', error)
@@ -39,11 +47,37 @@ export class DebateCache {
     }
 
     /**
+     * Clean expired items from memory cache
+     */
+    private static cleanMemoryCache() {
+        const now = Date.now()
+        for (const [key, value] of this.memoryCache.entries()) {
+            if (value.expiry < now) {
+                this.memoryCache.delete(key)
+            }
+        }
+    }
+
+    /**
      * Retrieve debate data from cache
      */
     static async getDebate(debateId: string): Promise<CacheOperationResult<DebateCacheData>> {
         try {
             const key = getDebateKey(debateId)
+
+            // Clean expired cache entries periodically
+            this.cleanMemoryCache()
+
+            // Check memory cache first
+            const cachedValue = this.memoryCache.get(key)
+            if (cachedValue && cachedValue.expiry > Date.now()) {
+                return {
+                    success: true,
+                    data: cachedValue.data
+                }
+            }
+
+            // If not in memory, check Redis
             const data = await redis.get<string>(key)
 
             if (!data) {
@@ -54,6 +88,11 @@ export class DebateCache {
             }
 
             const debateData = JSON.parse(data) as DebateCacheData
+
+            // Store in memory cache for future use
+            const expiryTime = Date.now() + (this.CACHE_DURATION * 60 * 60 * 1000)
+            this.memoryCache.set(key, { data: debateData, expiry: expiryTime })
+
             return {
                 success: true,
                 data: debateData
@@ -130,7 +169,10 @@ export class DebateCache {
     static async removeDebate(debateId: string): Promise<CacheOperationResult<void>> {
         try {
             const key = getDebateKey(debateId)
+            // Clear from Redis
             await redis.del(key)
+            // Clear from memory cache
+            this.memoryCache.delete(key)
             return { success: true }
         } catch (error) {
             console.error('Error removing debate from cache:', error)
@@ -150,16 +192,34 @@ export class DebateCache {
             const keys = await redis.keys('debate:metadata:*')
             const debates: DebateCacheData[] = []
 
-            // Fetch all debates in parallel
-            const debatePromises = keys.map(key => redis.get<string>(key))
-            const debateResults = await Promise.all(debatePromises)
+            // Check memory cache first before hitting Redis
+            const pendingFetches: { key: string; promise: Promise<string | null> }[] = []
 
-            // Filter debates for the user
-            for (const result of debateResults) {
+            for (const key of keys) {
+                const cachedValue = this.memoryCache.get(key)
+                if (cachedValue && cachedValue.expiry > Date.now() && cachedValue.data.userId === userId) {
+                    debates.push(cachedValue.data)
+                } else {
+                    pendingFetches.push({ key, promise: redis.get<string>(key) })
+                }
+            }
+
+            // Fetch remaining debates from Redis in parallel
+            const debateResults = await Promise.all(pendingFetches.map(item => item.promise))
+
+            // Process Redis results
+            for (let i = 0; i < debateResults.length; i++) {
+                const result = debateResults[i]
+                const key = pendingFetches[i].key
+
                 if (result) {
                     const debate = JSON.parse(result) as DebateCacheData
                     if (debate.userId === userId) {
                         debates.push(debate)
+
+                        // Update memory cache
+                        const expiryTime = Date.now() + (this.CACHE_DURATION * 60 * 60 * 1000)
+                        this.memoryCache.set(key, { data: debate, expiry: expiryTime })
                     }
                 }
             }

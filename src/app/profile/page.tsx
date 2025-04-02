@@ -16,7 +16,7 @@ type UserProfile = {
     name: string;
     profilePicture?: string;
     preferences: {
-        defaultExpertType: 'historical' | 'domain';
+        defaultExpertType: 'historical' | 'ai';
         useVoiceSynthesis: boolean;
         theme: 'light' | 'dark' | 'system';
     };
@@ -254,13 +254,13 @@ export default function ProfilePage() {
                                 <div className="flex items-center">
                                     <input
                                         type="checkbox"
-                                        id="expert-domain"
+                                        id="expert-ai"
                                         name="expertTypes"
-                                        value="domain"
-                                        defaultChecked={preferences.expertTypes?.includes("domain")}
+                                        value="ai"
+                                        defaultChecked={preferences.expertTypes?.includes("ai")}
                                         className="mr-2"
                                     />
-                                    <label htmlFor="expert-domain">Domain Expert</label>
+                                    <label htmlFor="expert-ai">AI Subject Expert</label>
                                 </div>
                                 <div className="flex items-center">
                                     <input

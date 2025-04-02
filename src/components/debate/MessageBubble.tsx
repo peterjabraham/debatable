@@ -4,26 +4,29 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Message } from '@/types/message';
 import { Expert } from '@/types/expert';
 import { Button } from '@/components/ui/button';
-import { Volume2, Loader2, Info, StopCircle } from 'lucide-react';
+import { Volume2, Loader2, Info, StopCircle, Database } from 'lucide-react';
 import { useDebateStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { CitationFooter } from './CitationFooter';
 import { processCitationMarkers } from '@/lib/utils/citation-processor';
 import { useToast } from '@/lib/hooks/useToast';
 import { MVP_CONFIG } from '@/lib/config';
+import { PerplexityLoader } from '@/components/ui/PerplexityLoader';
 
 interface MessageBubbleProps {
     message: Message;
     experts: Expert[];
     audioRef?: React.RefObject<HTMLAudioElement | null>;
     showCitations?: boolean; // Control whether to show citations (default: true)
+    isLoadingInsights?: boolean; // New prop to indicate if Perplexity insights are loading
 }
 
 export function MessageBubble({
     message,
     experts,
     audioRef: externalAudioRef,
-    showCitations = true
+    showCitations = true,
+    isLoadingInsights = false
 }: MessageBubbleProps) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -145,12 +148,33 @@ export function MessageBubble({
         return null;
     }
 
-    // For user messages
+    // New function to check if the message might mention sources that would trigger Perplexity
+    const mightContainSourceRequest = (content: string): boolean => {
+        const sourceKeywords = [
+            'recommend', 'source', 'reading', 'research', 'study',
+            'paper', 'article', 'publication', 'literature', 'evidence',
+            'data', 'insight', 'finding'
+        ];
+
+        return sourceKeywords.some(keyword =>
+            content.toLowerCase().includes(keyword)
+        );
+    };
+
+    // For user messages - add Perplexity indicator when appropriate
     if (message.role === 'user') {
+        const containsSourceRequest = mightContainSourceRequest(message.content);
+
         return (
             <div className="rounded-lg p-4 bg-primary/10 dark:bg-primary/20">
                 <div className="flex items-start gap-2 mb-2">
                     <h3 className="font-semibold text-foreground">You</h3>
+                    {containsSourceRequest && isLoadingInsights && (
+                        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground animate-pulse">
+                            <Database className="h-3 w-3" />
+                            <span>Perplexity search in progress...</span>
+                        </div>
+                    )}
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
             </div>
@@ -257,6 +281,17 @@ export function MessageBubble({
                 )}
             </div>
             <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+
+            {/* Add indicator if the expert is gathering information */}
+            {isLoadingInsights && (
+                <div className="mt-4 p-3 border border-dashed border-primary/40 rounded-md">
+                    <PerplexityLoader
+                        size="sm"
+                        message="Gathering additional insights"
+                        subtitle="Using Perplexity to find relevant information"
+                    />
+                </div>
+            )}
 
             {/* Add citation footer if citations exist and showCitations is true */}
             {showCitations && message.citations && message.citations.length > 0 && (

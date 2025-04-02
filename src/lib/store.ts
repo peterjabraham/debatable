@@ -3,7 +3,7 @@ import { Expert } from '@/types/expert';
 import { Message, Citation } from '@/types/message';
 import { processCitationMarkers } from './utils/citation-processor';
 
-type ExpertType = 'historical' | 'domain';
+type ExpertType = 'historical' | 'ai';
 
 // Helper function to sanitize names for OpenAI API
 function sanitizeNameForOpenAI(name: string | undefined): string | undefined {
@@ -55,10 +55,34 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     setUserStance: (stance) => set({ userStance: stance }),
     resetUserStance: () => set({ userStance: '' }),
     setExperts: (experts) => set({
-        experts: experts.map(expert => ({
-            ...expert,
-            id: expert.id || `expert_${Date.now()}_${expert.name.replace(/\s+/g, '_')}`
-        }))
+        experts: experts.map(expert => {
+            // Generate a consistent identifier for AI experts
+            let identifier = expert.identifier;
+            if (expert.type === 'ai' && !identifier) {
+                // Extract the first letter of each word in expertise for a more meaningful identifier
+                let expertCode = '';
+                if (expert.expertise && expert.expertise.length > 0) {
+                    // Take first expertise area, extract first letter of each word
+                    expertCode = expert.expertise[0]
+                        .split(' ')
+                        .map(word => word.charAt(0).toUpperCase())
+                        .join('');
+
+                    // Limit to 3 characters
+                    expertCode = expertCode.slice(0, 3);
+                }
+
+                // Random number between 1000-9999
+                const randomNum = Math.floor(1000 + Math.random() * 9000);
+                identifier = `AI-${expertCode}${randomNum}`;
+            }
+
+            return {
+                ...expert,
+                id: expert.id || `expert_${Date.now()}_${expert.name.replace(/\s+/g, '_')}`,
+                identifier
+            };
+        })
     }),
     addMessage: (message) => set((state) => {
         // Create a safe name for OpenAI API if one exists
