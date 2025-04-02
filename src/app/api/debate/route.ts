@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateDebateResponseServer } from '@/lib/openai';
-import { getExpertRecommendedReading } from '@/lib/api/perplexity';
 import type { ExpertProfile } from '@/lib/openai';
 
 // Function to sanitize names for OpenAI API compatibility
@@ -72,7 +71,7 @@ export async function POST(request: Request) {
             );
         }
 
-        // Generate debate response
+        // Generate debate response using OpenAI
         const response = await generateDebateResponseServer(
             [
                 { role: 'system', content: 'You are a helpful assistant' },
@@ -81,12 +80,8 @@ export async function POST(request: Request) {
             expert as ExpertProfile
         );
 
-        // Get recommended reading
-        const recommendedReading = await getExpertRecommendedReading(expert.name, topic);
-
         return NextResponse.json({
             ...response,
-            recommendedReading,
             apiSource: 'openai'
         });
 

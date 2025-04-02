@@ -12,24 +12,7 @@ interface ExpertCardProps {
 
 export function ExpertCard({ expert, className }: ExpertCardProps) {
     const { theme } = useTheme();
-    // Treat 'domain' type as 'ai' type
-    const isAiExpert = expert.type === 'ai' || expert.type === 'domain';
-
-    // If this is a domain expert with no identifier, generate one
-    if ((expert.type === 'domain' || expert.type === 'ai') && !expert.identifier) {
-        // Generate a random identifier if none exists
-        expert.identifier = `AI-${Math.floor(1000 + Math.random() * 9000)}`;
-
-        // Ensure name starts with AI if it doesn't already
-        if (!expert.name.startsWith('AI ')) {
-            // Extract expertise to create a better name
-            const expertiseArea = expert.expertise && expert.expertise.length > 0
-                ? expert.expertise[0]
-                : "Subject";
-
-            expert.name = `AI ${expertiseArea} Expert`;
-        }
-    }
+    const isAiExpert = expert.type === 'ai';
 
     return (
         <div

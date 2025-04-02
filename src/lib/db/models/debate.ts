@@ -33,9 +33,6 @@ export interface CreateDebateParams {
     summary?: string;
 }
 
-// Track request status to avoid duplicate requests
-const pendingRequests: Map<string, Promise<SavedDebate | null>> = new Map();
-
 /**
  * Create a new debate with retry logic and exponential backoff
  */
@@ -94,7 +91,7 @@ export async function createDebate(debateData: Partial<SavedDebate>): Promise<Sa
 }
 
 /**
- * Get a debate by ID with optimized request handling
+ * Get a debate by ID with retry logic and exponential backoff
  */
 export async function getDebateById(debateId: string): Promise<SavedDebate | null> {
     console.log('Getting debate by ID:', debateId);
@@ -104,26 +101,6 @@ export async function getDebateById(debateId: string): Promise<SavedDebate | nul
         throw new Error('Invalid debate ID provided');
     }
 
-    // Check if a request for this debate is already in progress
-    if (pendingRequests.has(debateId)) {
-        console.log(`Using existing request for debate ${debateId}`);
-        return pendingRequests.get(debateId) as Promise<SavedDebate | null>;
-    }
-
-    // Create new request promise and store it
-    const requestPromise = fetchDebateWithRetries(debateId);
-    pendingRequests.set(debateId, requestPromise);
-
-    // Clean up the pending request after completion
-    requestPromise.finally(() => {
-        pendingRequests.delete(debateId);
-    });
-
-    return requestPromise;
-}
-
-// Separate function for fetching with retries for cleaner code
-async function fetchDebateWithRetries(debateId: string): Promise<SavedDebate | null> {
     let retries = 0;
     const maxRetries = 8; // Increased from 5 to 8
     let debate = null;
@@ -223,7 +200,7 @@ export async function getDebatesByUserId(userId: string): Promise<SavedDebate[]>
 }
 
 /**
- * Add a message to a debate with optimized batch processing
+ * Add a message to a debate
  */
 export async function addMessageToDebate(debateId: string, message: Message): Promise<SavedDebate | null> {
     console.log('Adding message to debate ID:', debateId);
@@ -233,54 +210,27 @@ export async function addMessageToDebate(debateId: string, message: Message): Pr
         throw new Error('Invalid parameters for adding message to debate');
     }
 
-    try {
-        // Instead of getting the entire debate, just get the metadata or check existence
-        const debateExists = await documentExists(COLLECTIONS.DEBATES, debateId);
+    // Get the current debate
+    const debate = await getDebateById(debateId);
 
-        if (!debateExists) {
-            throw new Error(`Debate with ID ${debateId} not found`);
+    if (!debate) {
+        throw new Error(`Debate with ID ${debateId} not found`);
+    }
+
+    // Add the message to the debate
+    const messages = [...(debate.messages || []), message];
+
+    // Update the debate with the new message
+    const updatedDebate = await updateDocument(
+        COLLECTIONS.DEBATES,
+        debateId,
+        {
+            messages,
+            updatedAt: new Date().toISOString()
         }
+    );
 
-        // Add the message to the messages subcollection instead of updating the entire debate document
-        // This is more efficient for large debates with many messages
-        await createDocument(
-            `${COLLECTIONS.DEBATES}/${debateId}/messages`,
-            message.id || `msg_${Date.now()}`,
-            {
-                ...message,
-                timestamp: new Date().toISOString()
-            }
-        );
-
-        // Just update the timestamp in the debate document
-        await updateDocument(
-            COLLECTIONS.DEBATES,
-            debateId,
-            {
-                updatedAt: new Date().toISOString()
-            }
-        );
-
-        // For response consistency, we'll return the debate, but we'll only fetch it
-        // if needed by the calling code (indicated by includeFullDebate)
-        return { id: debateId, updatedAt: new Date().toISOString() } as Partial<SavedDebate> as SavedDebate;
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error adding message';
-        console.error('Error adding message to debate:', errorMessage);
-        throw error;
-    }
-}
-
-/**
- * Check if a document exists
- */
-async function documentExists(collection: string, documentId: string): Promise<boolean> {
-    try {
-        const doc = await getDocument(collection, documentId);
-        return !!doc;
-    } catch (error) {
-        return false;
-    }
+    return updatedDebate as SavedDebate;
 }
 
 /**

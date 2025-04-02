@@ -35,7 +35,7 @@ const getDefaultUserProfile = (userId?: string, userEmail?: string | null, userN
     lastLoginAt: new Date().toISOString(),
     preferredLanguage: 'en',
     preferredTopics: [],
-    expertTypes: ['ai', 'historical'],
+    expertTypes: ['domain', 'historical'],
     settings: {
         notifications: true,
         theme: 'system'
@@ -66,43 +66,6 @@ export function useUser() {
                 throw new Error('Failed to fetch profile');
             }
             const userData = await response.json();
-
-            // Migrate domain -> ai in expertTypes if needed
-            if (userData.expertTypes && userData.expertTypes.includes('domain')) {
-                console.log('Migrating domain -> ai in expertTypes');
-
-                // Replace domain with ai
-                const updatedExpertTypes = userData.expertTypes.map(
-                    (type: string) => type === 'domain' ? 'ai' : type
-                );
-
-                // Update the profile with new expert types
-                try {
-                    const updateResponse = await fetch('/api/user/profile/update', {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ expertTypes: updatedExpertTypes }),
-                    });
-
-                    if (updateResponse.ok) {
-                        console.log('Successfully migrated domain -> ai in expertTypes');
-                        const updatedData = await updateResponse.json();
-                        return {
-                            ...userData,
-                            expertTypes: updatedExpertTypes
-                        };
-                    }
-                } catch (err) {
-                    console.error('Failed to migrate domain -> ai:', err);
-                    // Return the original profile with manual fix applied
-                    return {
-                        ...userData,
-                        expertTypes: updatedExpertTypes
-                    };
-                }
-            }
 
             // If we got a temporary profile, schedule a refetch
             if (userData.isTemporary) {

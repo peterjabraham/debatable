@@ -25,11 +25,6 @@ function ensureProperAINames(experts: Expert[], expertType: 'historical' | 'ai')
     });
 }
 
-// Add a migration helper at the top of the file
-function migrateExpertType(type: string): 'historical' | 'ai' {
-    return type === 'domain' ? 'ai' : (type as 'historical' | 'ai');
-}
-
 export async function GET() {
     console.log('GET /api/debate-experts called');
     return NextResponse.json({
@@ -65,27 +60,15 @@ export async function POST(request: NextRequest) {
 
             try {
                 // Use expert type from request or default to historical
-                const expertType = migrateExpertType(body.expertType);
+                const expertType = body.expertType === 'ai' ? 'ai' : 'historical';
                 console.log(`Selecting ${expertType} experts for topic: ${body.topic}`);
 
-                const experts = await selectExperts(body.topic, expertType);
+                let experts = await selectExperts(body.topic, expertType);
 
-                // Ensure experts are updated for client with proper types
+                // Ensure AI experts have proper naming format
                 if (expertType === 'ai') {
-                    experts.forEach(expert => {
-                        // Make sure all experts of this type have proper naming convention
-                        if (!expert.name.startsWith('AI ')) {
-                            const expertiseArea = expert.expertise && expert.expertise.length > 0
-                                ? expert.expertise[0]
-                                : "Subject";
-                            expert.name = `AI ${expertiseArea} Expert`;
-                        }
-
-                        // Ensure they have an identifier
-                        if (!expert.identifier) {
-                            expert.identifier = `AI-${Math.floor(1000 + Math.random() * 9000)}`;
-                        }
-                    });
+                    experts = ensureProperAINames(experts, expertType);
+                    console.log('Processed AI expert names:', experts.map(e => e.name));
                 }
 
                 return NextResponse.json({

@@ -14,7 +14,7 @@ import {
 } from "./select";
 
 interface UserPreferences {
-    defaultExpertType: 'historical' | 'ai';
+    defaultExpertType: 'historical' | 'domain';
     useVoiceSynthesis: boolean;
     theme: 'light' | 'dark' | 'system';
 }
@@ -67,7 +67,7 @@ export function PreferenceSettings({ preferences, onSave }: PreferenceSettingsPr
                     onValueChange={(value) =>
                         setEditedPreferences({
                             ...editedPreferences,
-                            defaultExpertType: value as 'historical' | 'ai'
+                            defaultExpertType: value as 'historical' | 'domain'
                         })
                     }
                 >
@@ -76,7 +76,7 @@ export function PreferenceSettings({ preferences, onSave }: PreferenceSettingsPr
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="historical" className="text-sm">Historical Figures</SelectItem>
-                        <SelectItem value="ai" className="text-sm">AI Experts</SelectItem>
+                        <SelectItem value="domain" className="text-sm">Domain Experts</SelectItem>
                     </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500 dark:text-gray-400">

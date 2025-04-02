@@ -29,74 +29,6 @@ interface PerplexitySearchResult {
     source?: string;
 }
 
-// Simple rate limit tracker
-export const rateLimitTracker = {
-    lastCallTime: 0,
-    consecutiveErrors: 0,
-    isRateLimited: false,
-    cooldownUntil: 0,
-
-    // Cache for results to prevent duplicate calls
-    resultCache: new Map<string, any>(),
-
-    // Check if we should throttle API calls
-    shouldThrottle(): boolean {
-        const now = Date.now();
-
-        // If we're in a cooldown period due to rate limiting
-        if (this.isRateLimited && now < this.cooldownUntil) {
-            console.log(`Perplexity API in cooldown until ${new Date(this.cooldownUntil).toISOString()}`);
-            return true;
-        }
-
-        // If we're making calls too quickly (more than 1 per second)
-        const timeSinceLastCall = now - this.lastCallTime;
-        if (timeSinceLastCall < 1000) {
-            console.log(`Throttling Perplexity API call, last call was ${timeSinceLastCall}ms ago`);
-            return true;
-        }
-
-        // Allow the call
-        this.lastCallTime = now;
-        return false;
-    },
-
-    // Handle a rate limit error
-    handleRateLimitError() {
-        this.consecutiveErrors++;
-        this.isRateLimited = true;
-
-        // Exponential backoff: 5s, 10s, 20s, 40s, etc. up to 2 minutes
-        const backoffTime = Math.min(5000 * Math.pow(2, this.consecutiveErrors - 1), 120000);
-        this.cooldownUntil = Date.now() + backoffTime;
-
-        console.log(`Perplexity API rate limited, cooling down for ${backoffTime / 1000}s`);
-    },
-
-    // Handle a successful call
-    handleSuccess() {
-        this.consecutiveErrors = 0;
-        this.isRateLimited = false;
-    },
-
-    // Get cached result if available
-    getCachedResult(key: string): any | null {
-        return this.resultCache.get(key) || null;
-    },
-
-    // Cache a result
-    cacheResult(key: string, result: any): void {
-        this.resultCache.set(key, result);
-
-        // Keep the cache from growing too large (max 50 items)
-        if (this.resultCache.size > 50) {
-            // Remove oldest entry
-            const firstKey = this.resultCache.keys().next().value;
-            this.resultCache.delete(firstKey);
-        }
-    }
-};
-
 /**
  * Extracts JSON from a markdown-formatted string
  * The Chat API often returns JSON wrapped in a markdown code block
@@ -176,29 +108,10 @@ export async function getExpertRecommendedReading(
     topic: string
 ): Promise<PerplexitySearchResult[]> {
     try {
-        // Create a cache key from the expert name and topic
-        const cacheKey = `${expertName}:${topic}`;
-
-        // Check the cache first
-        const cachedResult = rateLimitTracker.getCachedResult(cacheKey);
-        if (cachedResult) {
-            console.log(`Using cached Perplexity results for ${expertName} on ${topic}`);
-            return cachedResult;
-        }
-
         // Check for mock data flag
         if (process.env.USE_MOCK_DATA === 'true') {
             console.log('Using mock data for recommended readings');
-            const mockData = generateMockReadings(expertName, topic);
-            rateLimitTracker.cacheResult(cacheKey, mockData);
-            return mockData;
-        }
-
-        // Check if we should throttle this request
-        if (rateLimitTracker.shouldThrottle()) {
-            console.log(`Perplexity API call throttled for ${expertName}, using mock data`);
-            const mockData = generateMockReadings(expertName, topic);
-            return mockData;
+            return generateMockReadings(expertName, topic);
         }
 
         // Handle client-side vs server-side
@@ -220,24 +133,11 @@ export async function getExpertRecommendedReading(
                 });
 
                 if (!response.ok) {
-                    // Handle rate limit specifically
-                    if (response.status === 429) {
-                        rateLimitTracker.handleRateLimitError();
-                        const mockData = generateMockReadings(expertName, topic);
-                        return mockData;
-                    }
-
                     throw new Error(`API route error: ${response.status}`);
                 }
 
                 const data = await response.json();
-                const readings = data.readings || [];
-
-                // Cache the result on success
-                rateLimitTracker.cacheResult(cacheKey, readings);
-                rateLimitTracker.handleSuccess();
-
-                return readings;
+                return data.readings || [];
             } catch (clientError) {
                 console.error('Error fetching through API route:', clientError);
                 return generateMockReadings(expertName, topic);
@@ -302,14 +202,6 @@ export async function getExpertRecommendedReading(
             );
 
             if (!response.ok) {
-                // Handle rate limiting
-                if (response.status === 429) {
-                    console.error('Perplexity API rate limited');
-                    rateLimitTracker.handleRateLimitError();
-                    const mockData = generateMockReadings(expertName, topic);
-                    return mockData;
-                }
-
                 console.error(`Perplexity API error: ${response.status} ${response.statusText}`);
                 return generateMockReadings(expertName, topic);
             }
@@ -326,18 +218,12 @@ export async function getExpertRecommendedReading(
             const readings = extractJsonFromMarkdown(content);
 
             // Add IDs to readings if they don't have them
-            const processedReadings = readings.map((reading: any, index: number) => ({
+            return readings.map((reading: any, index: number) => ({
                 id: reading.id || `perplexity-${Date.now()}-${index}`,
                 url: reading.url,
                 title: reading.title,
                 snippet: reading.snippet
             }));
-
-            // Cache the successful result
-            rateLimitTracker.cacheResult(cacheKey, processedReadings);
-            rateLimitTracker.handleSuccess();
-
-            return processedReadings;
         } catch (fetchError) {
             console.error('Network error fetching from Perplexity API:', fetchError);
             console.log('Falling back to mock data due to network error');
@@ -373,16 +259,6 @@ export async function getMultiExpertRecommendedReading(
         const isClient = typeof window !== 'undefined';
 
         if (isClient) {
-            // Create a cache key for the entire request
-            const cacheKey = `multi:${JSON.stringify(experts)}`;
-
-            // Check the cache first
-            const cachedResult = rateLimitTracker.getCachedResult(cacheKey);
-            if (cachedResult) {
-                console.log('Using cached multi-expert Perplexity results');
-                return cachedResult;
-            }
-
             // In the browser, use the API route to avoid CORS issues
             console.log('Running in client environment, using API route for multi-expert');
             try {
@@ -398,67 +274,47 @@ export async function getMultiExpertRecommendedReading(
                 });
 
                 if (!response.ok) {
-                    // Handle rate limiting
-                    if (response.status === 429) {
-                        rateLimitTracker.handleRateLimitError();
-                        return generateMockMultiExpertReadings(experts);
-                    }
-
                     throw new Error(`API route error: ${response.status}`);
                 }
 
                 const data = await response.json();
 
                 // Convert the response format to what we expect
-                const results = Object.entries(data).map(([expertName, readings]) => ({
+                return Object.entries(data).map(([expertName, readings]) => ({
                     expert: expertName,
                     readings
                 }));
-
-                // Cache successful result
-                rateLimitTracker.cacheResult(cacheKey, results);
-                rateLimitTracker.handleSuccess();
-
-                return results;
             } catch (clientError) {
                 console.error('Error fetching through API route:', clientError);
                 return generateMockMultiExpertReadings(experts);
             }
         }
 
-        // Server-side processing of each expert in parallel but with rate limiting
+        // Server-side code - process each expert in parallel
         console.log('Running in server environment, direct API access for multi-expert');
-
-        // To avoid rate limiting, process experts sequentially with delays
-        const results = [];
-        for (const expert of experts) {
+        const promises = experts.map(expert => {
             const expertName = 'role' in expert ? expert.role : expert.name;
             const topic = 'role' in expert ? expert.topic :
                 Array.isArray(expert.expertise) ? expert.expertise[0] :
                     (expert.expertise as string || 'general topics');
 
-            try {
-                // Add a small delay between each expert to avoid rate limiting
-                if (results.length > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-
-                const readings = await getExpertRecommendedReading(expertName, topic);
-                results.push({
+            return getExpertRecommendedReading(expertName, topic)
+                .then(readings => ({
                     expert: expertName,
                     readings
+                }))
+                .catch(error => {
+                    console.error(`Error fetching readings for expert ${expertName}:`, error);
+                    return {
+                        expert: expertName,
+                        readings: generateMockReadings(expertName, topic),
+                        error: error.message
+                    };
                 });
-            } catch (error) {
-                console.error(`Error fetching readings for expert ${expertName}:`, error);
-                results.push({
-                    expert: expertName,
-                    readings: generateMockReadings(expertName, topic),
-                    error: error instanceof Error ? error.message : 'Unknown error'
-                });
-            }
-        }
+        });
 
-        return results;
+        // Wait for all requests to complete
+        return await Promise.all(promises);
     } catch (error) {
         console.error('Error in getMultiExpertRecommendedReading:', error);
 

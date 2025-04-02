@@ -165,7 +165,7 @@ export function createDefaultUserProfile(id: string): UserProfile {
         profilePicture: 'https://i.pravatar.cc/150?u=' + id,
         preferredLanguage: 'en',
         preferredTopics: [],
-        expertTypes: ['ai'],
+        expertTypes: ['domain', 'historical'],
         settings: {
             notifications: true,
             theme: 'system'

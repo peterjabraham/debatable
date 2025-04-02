@@ -1,5 +1,7 @@
 import './globals.css';
 import { Inter } from 'next/font/google';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import { ToastProvider } from '@/components/providers/ToastProvider';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { Providers } from '@/lib/providers';
 import { Metadata } from 'next';
@@ -26,7 +28,11 @@ export default function RootLayout({
       <body className="min-h-screen bg-background antialiased">
         <Providers>
           <AuthProvider>
-            {children}
+            <ThemeProvider>
+              <ToastProvider>
+                {children}
+              </ToastProvider>
+            </ThemeProvider>
           </AuthProvider>
         </Providers>
       </body>

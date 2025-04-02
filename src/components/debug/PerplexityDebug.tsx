@@ -51,50 +51,6 @@ export function PerplexityDebug() {
         return "warning";
     };
 
-    // Add a function to render a summary status at the top
-    const getApiSummaryStatus = (diagnosticResults) => {
-        if (!diagnosticResults) return null;
-
-        // Determine overall API status
-        let status = 'unknown';
-        let message = '';
-        let icon = null;
-
-        if (diagnosticResults.apiTest.status === 200 && !diagnosticResults.mockDataForced) {
-            status = 'success';
-            message = 'Perplexity API is operational and available';
-            icon = <CheckCircle2 className="h-4 w-4 text-green-500" />;
-        } else if (diagnosticResults.apiTest.status === 401) {
-            status = 'error';
-            message = 'Authentication error - API key is invalid or expired';
-            icon = <XCircle className="h-4 w-4 text-red-500" />;
-        } else if (diagnosticResults.apiTest.status === 'error') {
-            status = 'error';
-            message = 'Connection error - Cannot reach Perplexity API';
-            icon = <XCircle className="h-4 w-4 text-red-500" />;
-        } else if (diagnosticResults.mockDataForced) {
-            status = 'warning';
-            message = 'Using mock data due to configuration or rate limiting';
-            icon = <AlertCircle className="h-4 w-4 text-yellow-500" />;
-        }
-
-        return (
-            <Alert variant={status === 'success' ? 'default' : status === 'error' ? 'destructive' : 'warning'} className="mb-4">
-                <div className="flex items-center">
-                    {icon}
-                    <div className="ml-2">
-                        <AlertTitle className="text-sm font-medium">
-                            {status === 'success' ? 'API Available' : status === 'error' ? 'API Error' : 'Mock Data Mode'}
-                        </AlertTitle>
-                        <AlertDescription className="text-xs">
-                            {message}
-                        </AlertDescription>
-                    </div>
-                </div>
-            </Alert>
-        );
-    };
-
     return (
         <Card className="w-full">
             <CardHeader>
@@ -126,9 +82,6 @@ export function PerplexityDebug() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {/* Summary Status */}
-                        {getApiSummaryStatus(diagnosticResults)}
-
                         {/* Environment Section */}
                         <div>
                             <h3 className="text-sm font-medium mb-2">Environment Configuration</h3>
@@ -227,35 +180,6 @@ export function PerplexityDebug() {
                                         <li key={index} className="text-blue-600 dark:text-blue-400">{rec}</li>
                                     ))}
                                 </ul>
-                            </div>
-                        )}
-
-                        {/* API Usage Statistics */}
-                        {diagnosticResults.apiUsage && (
-                            <div>
-                                <h3 className="text-sm font-medium mb-2">API Usage Statistics</h3>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div className="bg-muted p-3 rounded-lg">
-                                        <div className="text-xs text-muted-foreground">Requests Today</div>
-                                        <div className="text-lg font-semibold">{diagnosticResults.apiUsage.requestsToday || 0}</div>
-                                    </div>
-                                    <div className="bg-muted p-3 rounded-lg">
-                                        <div className="text-xs text-muted-foreground">Rate Limit</div>
-                                        <div className="text-lg font-semibold">{diagnosticResults.apiUsage.rateLimit || 'N/A'}</div>
-                                    </div>
-                                    <div className="bg-muted p-3 rounded-lg">
-                                        <div className="text-xs text-muted-foreground">Remaining</div>
-                                        <div className="text-lg font-semibold">{diagnosticResults.apiUsage.remaining || 'N/A'}</div>
-                                    </div>
-                                    <div className="bg-muted p-3 rounded-lg">
-                                        <div className="text-xs text-muted-foreground">Reset Time</div>
-                                        <div className="text-lg font-semibold">
-                                            {diagnosticResults.apiUsage.resetTime
-                                                ? new Date(diagnosticResults.apiUsage.resetTime).toLocaleTimeString()
-                                                : 'N/A'}
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         )}
                     </div>

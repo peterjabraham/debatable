@@ -5,16 +5,13 @@ import { Message } from '@/types/message';
 import { Expert } from '@/types/expert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { BookOpen, BrainCircuit, MessageSquareQuote, ListChecks, ExternalLink, RefreshCw, ChevronDown, Zap } from 'lucide-react';
+import { BookOpen, BrainCircuit, MessageSquareQuote, ListChecks, ExternalLink } from 'lucide-react';
 import { getMultiExpertRecommendedReading } from '@/lib/api/perplexity';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { EnvDebug } from '@/components/debug/EnvDebug';
-import { PerplexityDebug } from '@/components/debug/PerplexityDebug';
-import { useToast } from '@/lib/hooks/useToast';
-import { usePerplexity } from '@/lib/contexts/perplexity-context';
-import { PerplexityLoader } from '@/components/ui/PerplexityLoader';
-import { ReadingListItem } from './ReadingListItem';
+import { ChevronDown } from 'lucide-react';
+import { EnvDebug, PerplexityDebug } from '@/components/debug';
+import { PerplexityService, type ReadingError } from '@/lib/services/PerplexityService';
 
 interface DebateSummaryProps {
     topic: string;
@@ -43,125 +40,6 @@ function useDebounce<T>(value: T, delay: number): T {
 
     return debouncedValue;
 }
-
-// Helper function to get stance color (match the MessageBubble component colors)
-const getStanceColor = (stance: string) => {
-    switch (stance?.toLowerCase()) {
-        case 'pro':
-            return 'bg-green-100 dark:bg-green-900/50 border-green-200 dark:border-green-800';
-        case 'con':
-            return 'bg-red-100 dark:bg-red-900/50 border-red-200 dark:border-red-800';
-        default:
-            return 'bg-gray-100 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700';
-    }
-};
-
-// Update the helper function to get stance color for the collapsible headers
-const getCollapsibleStanceColor = (stance: string) => {
-    switch (stance?.toLowerCase()) {
-        case 'pro':
-            return 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800/60';
-        case 'con':
-            return 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/60';
-        default:
-            return 'bg-gray-50 dark:bg-gray-900/30 border-gray-200 dark:border-gray-700/60';
-    }
-};
-
-// Add a function to generate the TLDR summary
-const generateTLDR = (topic: string, messages: Message[], experts: Expert[]): string => {
-    // Default TLDR if we can't generate a better one
-    let defaultTLDR = `Learn different perspectives on ${topic} from multiple expert viewpoints.`;
-
-    // If we don't have enough messages, return the default
-    if (!messages || messages.length < 2) {
-        return defaultTLDR;
-    }
-
-    // Get the expert stances to identify key perspectives
-    const proExperts = experts.filter(e => e.stance?.toLowerCase() === 'pro').map(e => e.name);
-    const conExperts = experts.filter(e => e.stance?.toLowerCase() === 'con').map(e => e.name);
-
-    // Get key concluding messages from each side
-    const expertMessages = messages.filter(m => m.role === 'assistant');
-    // Get the last message from each expert (their concluding thoughts)
-    const conclusions = new Map<string, string>();
-
-    for (const message of expertMessages.reverse()) {
-        if (message.speaker && !conclusions.has(message.speaker)) {
-            conclusions.set(message.speaker, message.content);
-        }
-        // Once we have a message from each expert, stop looking
-        if (conclusions.size >= experts.length) break;
-    }
-
-    // Try to extract key phrases
-    const keyTerms = [
-        "in conclusion", "ultimately", "the key takeaway", "importantly",
-        "to summarize", "in summary", "the main point", "overall"
-    ];
-
-    let bestConclusionSentence = "";
-    let bestScore = -1;
-
-    // Go through each conclusion and find the best sentence
-    for (const [expert, content] of conclusions.entries()) {
-        const sentences = content.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 15 && s.length < 150);
-
-        for (const sentence of sentences) {
-            let score = 0;
-            // Check for presence of key terms
-            for (const term of keyTerms) {
-                if (sentence.toLowerCase().includes(term)) {
-                    score += 2;
-                    break; // Only count once per term type
-                }
-            }
-
-            // Prefer sentences with balanced stance language
-            const stanceWords = {
-                pro: ["benefit", "advantage", "positive", "opportunity", "support", "progress"],
-                con: ["risk", "concern", "negative", "problem", "oppose", "danger", "harmful"]
-            };
-
-            let proCount = 0;
-            let conCount = 0;
-
-            for (const word of stanceWords.pro) {
-                if (sentence.toLowerCase().includes(word)) proCount++;
-            }
-            for (const word of stanceWords.con) {
-                if (sentence.toLowerCase().includes(word)) conCount++;
-            }
-
-            // Add points for balanced perspective
-            if (proCount > 0 && conCount > 0) {
-                score += Math.min(proCount, conCount);
-            }
-
-            // Prefer shorter, punchier sentences
-            if (sentence.length < 100) score += 1;
-
-            // Update best sentence if this one has a higher score
-            if (score > bestScore) {
-                bestScore = score;
-                bestConclusionSentence = sentence;
-            }
-        }
-    }
-
-    // If we found a good conclusion sentence, use it
-    if (bestScore >= 2 && bestConclusionSentence) {
-        return bestConclusionSentence;
-    }
-
-    // If we have both pro and con experts, create a synthesized TLDR
-    if (proExperts.length > 0 && conExperts.length > 0) {
-        return `Understand both supporting and opposing perspectives on ${topic}, weighing the benefits and challenges presented by experts.`;
-    }
-
-    return defaultTLDR;
-};
 
 export function DebateSummary({ topic, experts, messages, className }: DebateSummaryProps) {
     // Filter out system messages and group by expert
@@ -219,174 +97,47 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
     const [isLoadingReadings, setIsLoadingReadings] = useState(false);
     const [readingErrors, setReadingErrors] = useState<ExpertReadingError[]>([]);
 
-    // Add these to the component state
-    const [retryAfter, setRetryAfter] = useState<number | null>(null);
-    const [retryTimeRemaining, setRetryTimeRemaining] = useState<number | null>(null);
-    const [retryTimerId, setRetryTimerId] = useState<NodeJS.Timeout | null>(null);
-
     const debouncedTopic = useDebounce(topic, 500);
 
-    // Add Perplexity context
-    const { setLoading: setPerplexityLoading } = usePerplexity();
-
-    // Add a function to handle retry countdown
-    const startRetryCountdown = useCallback((seconds: number) => {
-        if (retryTimerId) {
-            clearInterval(retryTimerId);
-        }
-
-        setRetryAfter(seconds);
-        setRetryTimeRemaining(seconds);
-
-        const timerId = setInterval(() => {
-            setRetryTimeRemaining(prev => {
-                const newValue = prev !== null ? prev - 1 : null;
-                if (newValue !== null && newValue <= 0) {
-                    clearInterval(timerId);
-                    setRetryTimerId(null);
-                    fetchRecommendedReadings(); // Auto-retry when timer expires
-                    return null;
-                }
-                return newValue;
-            });
-        }, 1000);
-
-        setRetryTimerId(timerId);
-
-        return () => {
-            clearInterval(timerId);
-        };
-    }, []);
-
-    // Clean up on unmount
+    // Fetch recommended readings when component mounts
     useEffect(() => {
-        return () => {
-            if (retryTimerId) {
-                clearInterval(retryTimerId);
-            }
-        };
-    }, [retryTimerId]);
-
-    // Modify the fetch function to handle 429 responses
-    const fetchRecommendedReadings = async () => {
-        if (!debouncedTopic || !experts || experts.length === 0) {
-            console.log('Missing required data for fetching readings:', { topic: debouncedTopic, experts });
-            return;
-        }
-
-        setIsLoadingReadings(true);
-        setReadingErrors([]);
-
-        // Update Perplexity loading state
-        setPerplexityLoading(true);
-
-        try {
-            console.log('Fetching recommended readings for:', { topic: debouncedTopic, experts });
-            // Format experts for the API
-            const expertData = experts.map(expert => ({
-                role: expert.name,
-                topic: debouncedTopic
-            }));
-
-            const response = await fetch('/api/perplexity', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    experts: expertData,
-                    topic: debouncedTopic
-                })
-            });
-
-            // Handle rate limiting specifically
-            if (response.status === 429) {
-                const data = await response.json();
-                const retryAfterHeader = response.headers.get('Retry-After');
-                const retrySeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : (data.retryAfter || 30);
-
-                console.log(`Rate limited, retry after ${retrySeconds} seconds`);
-
-                setReadingErrors([{
-                    expert: 'all',
-                    error: `API rate limited. Will retry in ${retrySeconds} seconds. ${data.message || ''}`
-                }]);
-
-                // Start the retry countdown
-                startRetryCountdown(retrySeconds);
-
-                setIsLoadingReadings(false);
-                setPerplexityLoading(false);
+        const fetchRecommendedReadings = async () => {
+            if (!debouncedTopic || !experts || experts.length === 0) {
+                console.log('Missing required data for fetching readings:', { topic: debouncedTopic, experts });
                 return;
             }
 
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
-            }
+            setIsLoadingReadings(true);
+            setReadingErrors([]);
 
-            const data = await response.json();
-            console.log('Received recommended reading results:', data);
+            // Use our new dedicated service for Perplexity
+            try {
+                console.log('Fetching recommended readings for:', { topic: debouncedTopic, experts });
 
-            // Process the response
-            const readingsRecord: Record<string, any[]> = {};
-            const newErrors: ExpertReadingError[] = [];
+                // Use the PerplexityService singleton
+                const perplexityService = PerplexityService.getInstance();
+                const { results, errors } = await perplexityService.getMultiExpertReadings(experts, debouncedTopic);
 
-            // Check if we got the old format or new format
-            if (data.results) {
-                // New format with separate results object
-                data.results.forEach((item: any) => {
-                    readingsRecord[item.expert] = item.readings || [];
+                // Set the readings in state
+                setRecommendedReadings(results);
 
-                    // If this expert had an error, store it
-                    if (item.error) {
-                        newErrors.push({
-                            expert: item.expert,
-                            error: item.error
-                        });
-                    }
-                });
-            } else {
-                // Old format or direct object mapping
-                Object.entries(data).forEach(([key, value]) => {
-                    // Skip the timestamp or other metadata
-                    if (key !== 'timestamp' && key !== 'errors') {
-                        readingsRecord[key] = Array.isArray(value) ? value : [];
-                    }
-                });
-
-                // Check for errors object
-                if (data.errors) {
-                    Object.entries(data.errors).forEach(([expert, error]) => {
-                        newErrors.push({
-                            expert,
-                            error: String(error)
-                        });
-                    });
+                // Handle any errors
+                if (errors.length > 0) {
+                    setReadingErrors(errors);
                 }
+            } catch (error) {
+                console.error('Error fetching recommended readings:', error);
+                setReadingErrors([{
+                    expert: 'all',
+                    error: error instanceof Error ? error.message : 'Failed to fetch recommended readings'
+                }]);
+            } finally {
+                setIsLoadingReadings(false);
             }
+        };
 
-            setRecommendedReadings(readingsRecord);
-
-            if (newErrors.length > 0) {
-                setReadingErrors(newErrors);
-            }
-        } catch (error) {
-            console.error('Error fetching recommended readings:', error);
-            setReadingErrors([{
-                expert: 'all',
-                error: error instanceof Error ? error.message : 'Failed to fetch recommended readings'
-            }]);
-        } finally {
-            setIsLoadingReadings(false);
-            // Update Perplexity loading state
-            setPerplexityLoading(false);
-        }
-    };
-
-    // Replace the useEffect with our new function
-    useEffect(() => {
         fetchRecommendedReadings();
-    }, [debouncedTopic, experts, setPerplexityLoading]);
+    }, [debouncedTopic, experts]);
 
     return (
         <div className={cn("space-y-6 p-6 border rounded-lg", className)}>
@@ -398,23 +149,6 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
                 <p className="text-muted-foreground">
                     Key insights and arguments from the debate on: <span className="font-medium text-foreground">{topic}</span>
                 </p>
-            </div>
-
-            {/* TLDR Section - Updated with news-style design */}
-            <div className="bg-black text-white rounded-lg p-4 mb-2 shadow-lg">
-                <div className="flex items-start gap-3">
-                    <div className="bg-yellow-400 p-2 rounded-full flex-shrink-0 mt-0.5">
-                        <Zap className="h-5 w-5 text-black" />
-                    </div>
-                    <div className="flex-1">
-                        <div className="text-yellow-400 font-bold text-xs mb-1">
-                            TLDR INSIGHT
-                        </div>
-                        <p className="text-base font-medium leading-snug">
-                            {generateTLDR(topic, messages, experts)}
-                        </p>
-                    </div>
-                </div>
             </div>
 
             {/* Key Points Section */}
@@ -489,49 +223,20 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
                 </h3>
 
                 {isLoadingReadings ? (
-                    <div className="p-4 border rounded-lg">
-                        <PerplexityLoader
-                            message="Loading recommended readings"
-                            subtitle="Fetching insights from Perplexity"
-                        />
+                    <div className="p-4 text-center">
+                        <div className="animate-pulse flex flex-col items-center">
+                            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+                            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                        </div>
                     </div>
                 ) : readingErrors.length > 0 && readingErrors[0].expert === 'all' ? (
-                    <div className="p-4 text-center rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-900/30">
-                        <p className="text-red-500 dark:text-red-400 mb-2">{readingErrors[0].error}</p>
-
-                        {retryTimeRemaining !== null ? (
-                            <div className="text-sm text-muted-foreground">
-                                Retrying in {retryTimeRemaining} seconds...
-                                <div className="w-full bg-gray-200 dark:bg-gray-700 h-1 mt-2 rounded-full overflow-hidden">
-                                    <div
-                                        className="bg-primary h-full transition-all duration-1000"
-                                        style={{
-                                            width: `${retryAfter ? (100 - (retryTimeRemaining / retryAfter * 100)) : 0}%`
-                                        }}
-                                    ></div>
-                                </div>
-                            </div>
-                        ) : (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => fetchRecommendedReadings()}
-                                className="mt-2"
-                            >
-                                Retry Now
-                            </Button>
-                        )}
+                    <div className="p-4 text-center text-red-500">
+                        {readingErrors[0].error}
                     </div>
                 ) : (
                     <div className="space-y-4">
                         {experts.map((expert) => (
-                            <Collapsible
-                                key={expert.name}
-                                className={cn(
-                                    "border rounded-lg overflow-hidden transition-colors",
-                                    getCollapsibleStanceColor(expert.stance || '')
-                                )}
-                            >
+                            <Collapsible key={expert.name} className="border rounded-lg">
                                 <CollapsibleTrigger className="w-full p-4 flex items-center justify-between">
                                     <div>
                                         <h4 className="font-medium">{expert.name}</h4>
@@ -543,15 +248,30 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
                                 </CollapsibleTrigger>
 
                                 <CollapsibleContent>
-                                    <div className="p-4 pt-0 border-t border-border/40">
+                                    <div className="p-4 pt-0">
                                         {recommendedReadings[expert.name]?.length > 0 ? (
                                             <div className="space-y-4">
                                                 {recommendedReadings[expert.name].map((reading) => (
-                                                    <ReadingListItem
+                                                    <a
                                                         key={reading.id}
-                                                        reading={reading}
-                                                        expert={expert}
-                                                    />
+                                                        href={reading.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="block p-4 border rounded-lg hover:bg-accent/50"
+                                                    >
+                                                        <div className="flex items-start gap-2">
+                                                            <ExternalLink className="h-4 w-4 mt-1" />
+                                                            <div>
+                                                                <p className="font-medium">{reading.title}</p>
+                                                                <p className="text-sm text-muted-foreground">{reading.snippet}</p>
+                                                                {reading.published_date && (
+                                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                                        Published: {new Date(reading.published_date).toLocaleDateString()}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </a>
                                                 ))}
                                             </div>
                                         ) : (

@@ -57,7 +57,7 @@ export default function SettingsTestPage() {
   };
 
   const changeExpertType = async () => {
-    const newType = preferences.defaultExpertType === 'historical' ? 'ai' : 'historical';
+    const newType = preferences.defaultExpertType === 'historical' ? 'domain' : 'historical';
     const success = await updatePreferences({ defaultExpertType: newType });
 
     if (success) {
@@ -73,9 +73,6 @@ export default function SettingsTestPage() {
       });
     }
   };
-
-  // Update text display
-  const expertTypeDisplay = preferences.defaultExpertType === 'historical' ? 'Historical Figures' : 'AI Subject Experts';
 
   if (!isLoaded) {
     return <div className="container py-8">Loading settings...</div>;
@@ -105,7 +102,7 @@ export default function SettingsTestPage() {
                 <span className="font-medium">Voice Synthesis:</span> {preferences.useVoiceSynthesis ? 'Enabled' : 'Disabled'}
               </div>
               <div>
-                <span className="font-medium">Default Expert Type:</span> {expertTypeDisplay}
+                <span className="font-medium">Default Expert Type:</span> {preferences.defaultExpertType}
               </div>
             </div>
           </CardContent>
