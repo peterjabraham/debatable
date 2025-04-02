@@ -12,6 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ChevronDown } from 'lucide-react';
 import { EnvDebug, PerplexityDebug } from '@/components/debug';
 import { PerplexityService, type ReadingError } from '@/lib/services/PerplexityService';
+import { ReadingListItem } from './ReadingListItem';
 
 interface DebateSummaryProps {
     topic: string;
@@ -252,26 +253,11 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
                                         {recommendedReadings[expert.name]?.length > 0 ? (
                                             <div className="space-y-4">
                                                 {recommendedReadings[expert.name].map((reading) => (
-                                                    <a
+                                                    <ReadingListItem
                                                         key={reading.id}
-                                                        href={reading.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="block p-4 border rounded-lg hover:bg-accent/50"
-                                                    >
-                                                        <div className="flex items-start gap-2">
-                                                            <ExternalLink className="h-4 w-4 mt-1" />
-                                                            <div>
-                                                                <p className="font-medium">{reading.title}</p>
-                                                                <p className="text-sm text-muted-foreground">{reading.snippet}</p>
-                                                                {reading.published_date && (
-                                                                    <p className="text-xs text-muted-foreground mt-1">
-                                                                        Published: {new Date(reading.published_date).toLocaleDateString()}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </a>
+                                                        reading={reading}
+                                                        expert={expert}
+                                                    />
                                                 ))}
                                             </div>
                                         ) : (
