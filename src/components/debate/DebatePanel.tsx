@@ -1568,7 +1568,17 @@ export function DebatePanel() {
                             {experts.length > 0 ? (
                                 <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
                                     {experts.map((expert) => (
-                                        <ExpertCard key={expert.id} expert={expert} />
+                                        <div
+                                            key={expert.id}
+                                            className={cn(
+                                                "rounded-lg overflow-hidden",
+                                                expert.stance === 'pro'
+                                                    ? 'bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800'
+                                                    : 'bg-red-100 dark:bg-red-900/50 border border-red-200 dark:border-red-800'
+                                            )}
+                                        >
+                                            <ExpertCard expert={expert} />
+                                        </div>
                                     ))}
                                 </div>
                             ) : (
@@ -1585,26 +1595,30 @@ export function DebatePanel() {
                                     <div className="mt-8 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s ease-in forwards 4s' }}>
                                         <p className="text-sm text-center text-yellow-400 mb-4">Using sample experts while we load...</p>
                                         <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
-                                            <ExpertCard key="fallback_pro" expert={{
-                                                id: 'fallback_pro',
-                                                name: 'AI Environmental Expert',
-                                                type: 'ai',
-                                                background: 'Specializes in environmental science and climate policy analysis',
-                                                expertise: ['Climate Science', 'Policy Analysis'],
-                                                stance: 'pro',
-                                                perspective: 'I support evidence-based solutions to climate challenges.',
-                                                identifier: 'AI-ENV5432'
-                                            }} />
-                                            <ExpertCard key="fallback_con" expert={{
-                                                id: 'fallback_con',
-                                                name: 'AI Economic Policy Expert',
-                                                type: 'ai',
-                                                background: 'Specializes in economic policy and market impact assessment',
-                                                expertise: ['Economics', 'Policy Analysis'],
-                                                stance: 'con',
-                                                perspective: 'I believe we need careful consideration of economic implications.',
-                                                identifier: 'AI-EPE7891'
-                                            }} />
+                                            <div className="rounded-lg overflow-hidden bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800">
+                                                <ExpertCard key="fallback_pro" expert={{
+                                                    id: 'fallback_pro',
+                                                    name: 'AI Environmental Expert',
+                                                    type: 'ai',
+                                                    background: 'Specializes in environmental science and climate policy analysis',
+                                                    expertise: ['Climate Science', 'Policy Analysis'],
+                                                    stance: 'pro',
+                                                    perspective: 'I support evidence-based solutions to climate challenges.',
+                                                    identifier: 'AI-ENV5432'
+                                                }} />
+                                            </div>
+                                            <div className="rounded-lg overflow-hidden bg-red-100 dark:bg-red-900/50 border border-red-200 dark:border-red-800">
+                                                <ExpertCard key="fallback_con" expert={{
+                                                    id: 'fallback_con',
+                                                    name: 'AI Economic Policy Expert',
+                                                    type: 'ai',
+                                                    background: 'Specializes in economic policy and market impact assessment',
+                                                    expertise: ['Economics', 'Policy Analysis'],
+                                                    stance: 'con',
+                                                    perspective: 'I believe we need careful consideration of economic implications.',
+                                                    identifier: 'AI-EPE7891'
+                                                }} />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

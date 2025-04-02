@@ -14,12 +14,23 @@ export function ExpertCard({ expert, className }: ExpertCardProps) {
     const { theme } = useTheme();
     const isAiExpert = expert.type === 'ai';
 
+    // Get background color based on stance
+    const getStanceColor = () => {
+        switch (expert.stance?.toLowerCase()) {
+            case 'pro':
+                return 'bg-green-100 dark:bg-green-900/50 border-green-200 dark:border-green-800';
+            case 'con':
+                return 'bg-red-100 dark:bg-red-900/50 border-red-200 dark:border-red-800';
+            default:
+                return 'bg-gray-100 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700';
+        }
+    };
+
     return (
         <div
             className={cn(
-                'flex flex-col items-center p-4 rounded-lg border transition-colors duration-200',
-                'border-[hsl(var(--border))]',
-                theme === 'light' ? 'hover:bg-accent/50' : 'hover:bg-accent/50',
+                'flex flex-col items-center p-4 rounded-lg transition-colors duration-200',
+                theme === 'light' ? 'hover:bg-accent/30' : 'hover:bg-accent/30',
                 isAiExpert && 'border-primary/30',
                 className
             )}
