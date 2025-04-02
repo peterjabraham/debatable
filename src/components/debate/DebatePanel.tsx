@@ -1312,7 +1312,7 @@ export function DebatePanel() {
 
             {/* Show summary if requested */}
             {showSummary && messages.length > 0 && (
-                <div className="mb-8 p-6 bg-gray-800 border border-gray-700 rounded-lg">
+                <div className="mb-8 p-6 bg-black border border-gray-800 rounded-lg">
                     <h2 className="text-2xl font-bold text-center mb-6">Debate Summary</h2>
                     <DebateSummary
                         topic={topic}
@@ -1342,7 +1342,7 @@ export function DebatePanel() {
 
             <div className={cn(
                 "flex flex-col flex-1 p-4 md:p-6 rounded-lg",
-                "bg-gray-800 border border-gray-700",
+                "bg-black border border-gray-800",
                 showSummary && "opacity-50"
             )}>
                 {/* Progressive Loading States */}
@@ -1410,7 +1410,7 @@ export function DebatePanel() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
                                 <button
                                     onClick={() => handleExpertTypeSelect('historical')}
-                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors"
+                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-800 bg-black hover:bg-gray-900 transition-colors"
                                 >
                                     <div className="w-16 h-16 rounded-full bg-blue-900 flex items-center justify-center mb-4">
                                         <BookOpen className="h-8 w-8 text-blue-300" />
@@ -1423,7 +1423,7 @@ export function DebatePanel() {
 
                                 <button
                                     onClick={() => handleExpertTypeSelect('ai')}
-                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors"
+                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-800 bg-black hover:bg-gray-900 transition-colors"
                                 >
                                     <div className="w-16 h-16 rounded-full bg-purple-900 flex items-center justify-center mb-4">
                                         <BrainCircuit className="h-8 w-8 text-purple-300" />
@@ -1501,8 +1501,7 @@ export function DebatePanel() {
                                                         initializeDebateWithTopic();
                                                     }, 100);
                                                 }}
-                                                className={`card p-4 text-left hover:bg-accent transition-colors ${selectedTopic === topic.title ? 'border-2 border-primary' : 'border border-border'
-                                                    }`}
+                                                className={`card p-4 text-left hover:bg-accent transition-colors ${selectedTopic === topic.title ? 'border-2 border-primary' : 'border border-border'}`}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
                                                     <h4 className="font-medium text-md">{topic.title}</h4>
@@ -1528,7 +1527,7 @@ export function DebatePanel() {
                             )}
 
                             {loadingState && (
-                                <div className="border rounded-lg p-6 mt-4 bg-gray-700/50 text-center">
+                                <div className="border rounded-lg p-6 mt-4 bg-black/50 text-center">
                                     <div className="flex items-center justify-center space-x-2 p-4">
                                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
                                         <span className="text-white font-medium">{loadingState}</span>

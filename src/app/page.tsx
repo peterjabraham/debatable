@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col overflow-auto bg-gray-900">
       {/* Navigation */}
-      <header className="bg-gray-900 border-b border-gray-800 p-4 flex justify-between items-center">
+      <header className="bg-black border-b border-gray-800 p-4 flex justify-between items-center">
         <h1 className="text-xl font-bold text-white">Debate-able</h1>
         <div className="flex items-center gap-4">
           <nav className="hidden md:flex space-x-6">

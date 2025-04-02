@@ -22,7 +22,7 @@ export function ExpertCard({ expert, className }: ExpertCardProps) {
             case 'con':
                 return 'bg-red-100 dark:bg-red-900/50 border-red-200 dark:border-red-800';
             default:
-                return 'bg-gray-100 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700';
+                return 'bg-gray-100 dark:bg-black border-gray-200 dark:border-gray-800';
         }
     };
 
