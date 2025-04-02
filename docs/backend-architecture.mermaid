@@ -1,0 +1,98 @@
+flowchart TB
+    subgraph Client
+        UI["React Frontend"]
+        VoiceIn["Voice Input Module"]
+        VoiceOut["Voice Output Module"]
+        ThemeProvider["Theme Provider"]
+        ErrorBoundary["Error Boundaries"]
+    end
+    
+    subgraph Backend
+        API["API Layer (Next.js)"]
+        
+        subgraph ContentProcessing
+            DocParser["Document Parser"]
+            TopicExtractor["Topic Extractor"]
+            MediaProcessor["Media Processor"]
+        end
+        
+        subgraph AIEngine
+            LLM["OpenAI GPT-4o"]
+            DebatersDB["Debater Personas DB"]
+            PromptEngine["Prompt Engineering Engine"]
+            FactChecker["Fact Verification"]
+            RAG["Retrieval Augmented Generation"]
+            ContextManager["Context Manager"]
+        end
+        
+        subgraph UserDataStore
+            Firebase[(Firebase/Firestore)]
+            Redis[(Upstash Redis)]
+            VectorDB[(Pinecone Vector DB)]
+        end
+
+        subgraph APIResilience
+            FallbackSystem["Multi-Layered Fallback"]
+            MockData["Mock Data Provider"]
+            CircuitBreaker["Circuit Breaker"]
+        end
+    end
+    
+    subgraph ExternalServices
+        ElevenLabs["ElevenLabs API"]
+        PerplexityAPI["Perplexity API"]
+        OpenAI["OpenAI API"]
+    end
+    
+    UI --> API
+    VoiceIn --> API
+    API --> VoiceOut
+    UI --> ErrorBoundary
+    UI --> ThemeProvider
+    
+    API --> DocParser
+    API --> TopicExtractor
+    API --> MediaProcessor
+    
+    DocParser --> TopicExtractor
+    MediaProcessor --> TopicExtractor
+    
+    TopicExtractor --> PromptEngine
+    PromptEngine --> LLM
+    DebatersDB --> PromptEngine
+    RAG --> LLM
+    LLM --> FactChecker
+    FactChecker --> API
+    ContextManager --> LLM
+    
+    API --> Firebase
+    API --> Redis
+    API --> VectorDB
+    
+    API --> FallbackSystem
+    FallbackSystem --> MockData
+    FallbackSystem --> CircuitBreaker
+    
+    VoiceIn --> ElevenLabs
+    ElevenLabs --> VoiceOut
+    
+    API --> PerplexityAPI
+    API --> OpenAI
+    LLM --> OpenAI
+    
+    %% New connections for Perplexity integration
+    DebateSummary["Debate Summary"] --> PerplexityAPI
+    PerplexityAPI --> RecommendedReading["Recommended Reading"]
+    
+    %% Resilience connections
+    API --> MockData
+    ErrorBoundary --> UI
+    
+    %% State management
+    Zustand["Zustand Store"] --> UI
+    API --> Zustand
+    
+    %% Authentication flow
+    Auth["NextAuth.js"] --> API
+    UI --> Auth
+    Auth --> Firebase

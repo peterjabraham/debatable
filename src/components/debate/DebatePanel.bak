@@ -1,0 +1,1432 @@
+"use client";
+
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useDebateStore } from '@/lib/store';
+import { assignVoiceToExpert } from '@/lib/elevenlabs';
+import { Message } from '@/types/message';
+import { Expert } from '@/types/expert';
+import { MessageBubble } from './MessageBubble';
+import { ExpertCard } from './ExpertCard';
+import { UserInput } from './UserInput';
+import { DebateSummary } from './DebateSummary';
+import { Loader2, ChevronDown, ChevronUp, Upload } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { v4 as uuidv4 } from 'uuid';
+import { cn } from '@/lib/utils';
+import { useErrorHandler } from '@/lib/hooks/useErrorHandler';
+import { useToast } from '@/lib/hooks/useToast';
+import { createError } from '@/lib/errors/types';
+import { get, post, initRequestManager, API_CONFIG } from '@/lib/api/requestManager';
+
+// Flag to completely disable API testing in MVP mode - ALWAYS TRUE FOR MVP
+const DISABLE_API_TESTING = true;
+
+// Flag to disable debug logs in MVP mode - ALWAYS TRUE FOR MVP
+const DISABLE_DEBUG_LOGS = true;
+
+// Fix the MVPConfig interface to match our usage
+interface MVPConfig {
+    apiUrl: string;
+    disableApiTesting: boolean;
+    disableDebugLogs: boolean;
+    throttleWindow: number;
+}
+
+// MVP mode configuration - for backwards compatibility
+const MVP_CONFIG: MVPConfig = {
+    // Always use hardcoded API URL in MVP mode for stability
+    apiUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3030',
+
+    // Disable API testing in MVP mode
+    disableApiTesting: true,
+
+    // Silence console logs in MVP
+    disableDebugLogs: true,
+
+    // Throttle window in milliseconds
+    throttleWindow: 5000
+};
+
+// Conditionally log based on debug setting
+const debugLog = (...args: any[]) => {
+    // Only log if debug mode is enabled in the API config
+    if (API_CONFIG?.debug) {
+        console.log('[DEBATE]', ...args);
+    }
+};
+
+// Initialize the request manager with our settings - cast to any to avoid typing issues
+initRequestManager({
+    baseUrl: MVP_CONFIG.apiUrl,
+    debug: !MVP_CONFIG.disableDebugLogs,
+    throttleWindow: 5000 // 5 seconds throttling window
+} as any);
+
+// Global request tracker 
+// This persists across component re-renders but will be reset on full page reload
+const requestTracker = {
+    recentRequests: new Map<string, number>(),
+    cleanupInterval: null as NodeJS.Timeout | null,
+
+    // Start periodic cleanup to prevent memory leaks
+    startCleanup() {
+        if (!this.cleanupInterval) {
+            this.cleanupInterval = setInterval(() => {
+                const now = Date.now();
+                for (const [key, timestamp] of this.recentRequests.entries()) {
+                    // Remove entries older than 30 seconds in MVP mode
+                    if (now - timestamp > MVP_CONFIG.throttleWindow) {
+                        this.recentRequests.delete(key);
+                    }
+                }
+            }, 10000);
+        }
+    },
+
+    // Stop cleanup when no longer needed
+    stopCleanup() {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+    }
+};
+
+// Ensure cleanup starts
+requestTracker.startCleanup();
+
+// Loading state types
+type LoadingState = {
+    state: 'idle' | 'loading' | 'success' | 'error';
+    message?: string;
+};
+
+type StepState = {
+    expertSelection: LoadingState;
+    topicInitialization: LoadingState;
+    expertLoading: LoadingState;
+    responseGeneration: LoadingState;
+    voiceSynthesis: LoadingState;
+};
+
+export function DebatePanel() {
+    const {
+        topic,
+        experts,
+        messages,
+        isGenerating,
+        useVoiceSynthesis,
+        useCitations,
+        expertType,
+        debateId,
+        error: storeError,
+        setTopic,
+        setExperts,
+        addMessage,
+        setIsGenerating,
+        setUseCitations,
+        setExpertType,
+        initializeDebate,
+        setError,
+        reset
+    } = useDebateStore();
+
+    // Initialize error handling and toast hooks
+    const { handleError, clearError, retry, canRetry } = useErrorHandler({
+        maxRetries: 3,
+        onError: (error) => {
+            displayError(error);
+        },
+    });
+    const { showError: displayError, showSuccess, showWarning, showInfo } = useToast();
+
+    const [showSummary, setShowSummary] = useState(false);
+    const [userTopic, setUserTopic] = useState('');
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [loadingState, setLoadingState] = useState<string>('');
+    const [expertsSelected, setExpertsSelected] = useState(false);
+    const [showExpertSelection, setShowExpertSelection] = useState(false);
+    const [expertsLoading, setExpertsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [selectedParticipantType, setSelectedParticipantType] = useState<'historical' | 'domain' | null>(null);
+    const [extractedTopics, setExtractedTopics] = useState<Array<{
+        title: string;
+        confidence: number;
+        arguments: string[];
+    }>>([]);
+    const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+    const [isContentAnalyzerOpen, setIsContentAnalyzerOpen] = useState(true);
+    const [steps, setSteps] = useState<StepState>({
+        expertSelection: { state: 'idle' },
+        topicInitialization: { state: 'idle' },
+        expertLoading: { state: 'idle' },
+        responseGeneration: { state: 'idle' },
+        voiceSynthesis: { state: 'idle' }
+    });
+
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Request utility using the request manager
+    const makeApiRequest = useCallback(async (
+        endpoint: string,
+        method: 'GET' | 'POST',
+        data?: any,
+        throttleKey?: string
+    ) => {
+        try {
+            if (method === 'GET') {
+                const response = await get(endpoint, data, {
+                    throttleKey,
+                    cache: true,
+                    throttle: true
+                });
+                return response.data;
+            } else {
+                const response = await post(endpoint, data, {
+                    throttleKey,
+                    cache: true,
+                    throttle: true
+                });
+                return response.data;
+            }
+        } catch (error) {
+            console.error(`API request failed: ${error}`);
+            throw error;
+        }
+    }, []);
+
+    // Helper function to generate and handle expert responses
+    const generateExpertResponses = useCallback(async (currentExperts: Expert[], currentMessages: Message[]) => {
+        updateStepState('responseGeneration', 'loading', 'Generating responses...');
+        try {
+            // Use either the topic from the store or the selectedTopic local state
+            const currentTopic = topic || selectedTopic;
+            console.log('Generating responses for topic:', currentTopic);
+
+            // Parse the topic data if it's in JSON format
+            let topicTitle = currentTopic;
+            let topicArguments = [];
+
+            try {
+                // Use the same parsing approach as in selectExperts
+                if (typeof currentTopic === 'string' && currentTopic.startsWith('{') && currentTopic.includes('title')) {
+                    const parsedTopic = JSON.parse(currentTopic);
+                    topicTitle = parsedTopic.title;
+
+                    // Extract arguments if available
+                    if (parsedTopic.data && parsedTopic.data.arguments) {
+                        topicArguments = parsedTopic.data.arguments;
+                        console.log('Found topic arguments:', topicArguments);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to parse topic JSON:', e);
+                // Continue with the topic as-is if parsing fails
+            }
+
+            // Simulate responses for each expert
+            const responses = currentExperts.map((expert, index) => {
+                // Get the last user message if available
+                const lastUserMessage = currentMessages.length > 0
+                    ? currentMessages[currentMessages.length - 1].content
+                    : '';
+
+                let simulatedResponse = '';
+
+                // If this is the first message (no user messages yet), use the extracted arguments
+                if (currentMessages.length === 0 && topicArguments.length > 0) {
+                    // Each expert focuses on different arguments
+                    const expertArgument = topicArguments[index % topicArguments.length];
+
+                    // Handle different formats of arguments
+                    const argumentText = typeof expertArgument === 'string'
+                        ? expertArgument
+                        : (expertArgument.claim || expertArgument.text || JSON.stringify(expertArgument));
+
+                    // Handle evidence if available
+                    const evidence = typeof expertArgument === 'object' && expertArgument.evidence
+                        ? expertArgument.evidence
+                        : '';
+
+                    // Handle counterpoints if available
+                    const counterpoint = typeof expertArgument === 'object' &&
+                        expertArgument.counterpoints &&
+                        Array.isArray(expertArgument.counterpoints) &&
+                        expertArgument.counterpoints.length > 0
+                        ? expertArgument.counterpoints[0]
+                        : '';
+
+                    if (expert.stance === 'pro') {
+                        simulatedResponse = `As a proponent in the field of ${topicTitle}, I'd like to highlight some key points: ${argumentText}. ${evidence}`;
+                    } else {
+                        simulatedResponse = `While examining ${topicTitle}, I have a different perspective to offer: ${argumentText}. ${evidence}`;
+
+                        // Add counterpoints if available
+                        if (counterpoint) {
+                            simulatedResponse += ` However, it's worth considering that ${counterpoint}`;
+                        }
+                    }
+                } else {
+                    // For subsequent messages, use the previous approach
+                    simulatedResponse = expert.stance === 'pro'
+                        ? `As someone who supports action on ${topicTitle}, I believe we need to take this issue seriously. ${expert.perspective}`
+                        : `I have reservations about some aspects of ${topicTitle}. ${expert.perspective}`;
+                }
+
+                return {
+                    response: simulatedResponse,
+                    usage: {
+                        tokens: 250,
+                        promptTokens: 100,
+                        completionTokens: 150,
+                        cost: 0.002
+                    },
+                    expertName: expert.name,
+                    expertId: expert.id
+                };
+            });
+
+            for (const { response, usage, expertName, expertId } of responses) {
+                const messageId = `msg_${Date.now()}_${expertId}`;
+                const newMessage = {
+                    id: messageId,
+                    role: 'assistant' as const,
+                    content: response,
+                    speaker: expertName,
+                    usage
+                };
+
+                addMessage(newMessage);
+                useDebateStore.getState().processCitationsInMessage(messageId);
+            }
+
+            if (useVoiceSynthesis) {
+                await handleVoiceSynthesis(responses, currentExperts);
+            }
+
+            updateStepState('responseGeneration', 'success', 'Responses generated successfully!');
+            showSuccess('Responses Generated', 'Expert responses are ready');
+        } catch (error) {
+            const appError = createError(
+                'RESPONSE_GENERATION_ERROR',
+                'Failed to generate expert responses',
+                'high',
+                true,
+                { topic, messageCount: currentMessages.length }
+            );
+            handleError(appError);
+            updateStepState('responseGeneration', 'error', 'Failed to generate responses');
+        }
+    }, [topic, useCitations, debateId, addMessage, handleError, showSuccess]);
+
+    // Update step state helper
+    const updateStepState = (
+        step: keyof StepState,
+        state: LoadingState['state'],
+        message?: string
+    ) => {
+        setSteps(prev => ({
+            ...prev,
+            [step]: { state, message }
+        }));
+    };
+
+    // Handle expert type selection
+    const handleExpertTypeSelect = async (type: 'historical' | 'domain') => {
+        try {
+            updateStepState('expertSelection', 'loading', 'Preparing expert selection...');
+            setExperts([]);
+            setExpertType(type);
+            setSelectedParticipantType(type);
+            clearError();
+            setIsLoading(false);
+            updateStepState('expertSelection', 'success');
+            showSuccess('Expert Type Selected', `${type} experts will be used for the debate`);
+        } catch (error) {
+            const appError = createError(
+                'EXPERT_SELECTION_ERROR',
+                'Failed to set expert type',
+                'medium',
+                true,
+                { type }
+            );
+            handleError(appError);
+            updateStepState('expertSelection', 'error', 'Failed to set expert type');
+        }
+    };
+
+    // Handle topic selection from extracted topics
+    const handleTopicSelect = (topicTitle: string, topicData?: any) => {
+        console.log('Topic selected:', topicTitle, 'with data:', topicData);
+        setUserTopic(topicTitle);
+
+        // Store the complete topic data in the store, not just the title
+        // This ensures arguments are available for expert generation
+        if (topicData) {
+            // Store as JSON string to preserve all data
+            const topicWithData = JSON.stringify({
+                title: topicTitle,
+                data: topicData
+            });
+            setTopic(topicWithData);
+        } else {
+            // Fallback to just the title if no data provided
+            setTopic(topicTitle);
+        }
+
+        setSelectedTopic(topicTitle);
+        // Ensure expert selection is shown after topic is selected
+        setShowExpertSelection(true);
+    };
+
+    // Initialize debate after topic selection
+    const initializeDebateWithTopic = async () => {
+        if (!selectedTopic || !selectedParticipantType) {
+            console.warn('Cannot initialize debate: missing topic or participant type', { selectedTopic, selectedParticipantType });
+            return;
+        }
+
+        console.log('Initializing debate with topic:', selectedTopic, 'and participant type:', selectedParticipantType);
+        const newDebateId = uuidv4();
+        updateStepState('topicInitialization', 'loading', 'Initializing debate...');
+
+        try {
+            // For now, use a simplified approach without making the API call
+            // Initialize directly with the generated debateId
+            initializeDebate(newDebateId, selectedTopic);
+            updateStepState('topicInitialization', 'success', 'Debate initialized!');
+            showSuccess('Debate Initialized', 'Ready to select experts');
+            setShowExpertSelection(true);
+
+            // Add a small delay to ensure the topic state is updated
+            // before calling selectExperts
+            setTimeout(async () => {
+                console.log('Calling selectExperts() after initialization, topic state:', topic);
+                await selectExperts();
+            }, 300);
+        } catch (error) {
+            console.error('Error initializing debate:', error);
+            const appError = createError(
+                'DEBATE_INITIALIZATION_ERROR',
+                'Failed to initialize debate',
+                'high',
+                true,
+                { topic: selectedTopic, expertType: selectedParticipantType }
+            );
+            handleError(appError);
+            updateStepState('topicInitialization', 'error', 'Failed to initialize debate');
+        }
+    };
+
+    // Update selectExperts to use the selected participant type
+    const selectExperts = async () => {
+        console.log('Starting selectExperts() function with topic:', topic, 'selectedTopic:', selectedTopic, 'expertType:', expertType);
+
+        // Use either the topic from the store or the selectedTopic local state
+        const currentTopic = topic || selectedTopic;
+
+        if (!currentTopic) {
+            console.warn('Missing topic, cannot select experts');
+            showWarning('Missing Topic', 'Please enter a topic first');
+            return;
+        }
+
+        // Parse topic data if it's stored as JSON
+        let topicTitle = currentTopic;
+        let topicArguments = [];
+
+        try {
+            // Check if the topic is stored as JSON with additional data
+            if (currentTopic.startsWith('{') && currentTopic.includes('title')) {
+                const parsedTopic = JSON.parse(currentTopic);
+                topicTitle = parsedTopic.title;
+
+                // Extract arguments if available
+                if (parsedTopic.data && parsedTopic.data.arguments) {
+                    topicArguments = parsedTopic.data.arguments;
+                }
+
+                console.log('Parsed topic data:', { topicTitle, topicArguments });
+            }
+        } catch (e) {
+            console.warn('Failed to parse topic data, using as plain text:', e);
+            // Continue with topic as plain text
+        }
+
+        updateStepState('expertLoading', 'loading', 'Selecting experts...');
+        setIsLoading(true);
+        setExpertsLoading(true);
+        clearError();
+
+        // API endpoints to try in order of preference
+        const apiEndpoints = [
+            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/debate`,
+            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/climate-debate`
+        ];
+
+        try {
+            let success = false;
+            let responseData = null;
+
+            // Try each endpoint until one succeeds
+            for (const endpoint of apiEndpoints) {
+                try {
+                    console.log(`Attempting to select experts via ${endpoint}...`);
+
+                    // Use the throttled request helper
+                    responseData = await makeApiRequest(
+                        endpoint,
+                        'POST',
+                        {
+                            action: 'select-experts',
+                            topic: topicTitle,
+                            topicArguments: topicArguments,
+                            expertType,
+                            count: 2
+                        },
+                        `POST-${endpoint}-select-experts-${expertType}`
+                    );
+
+                    console.log(`Select experts on ${endpoint} succeeded:`, responseData);
+                    success = true;
+                    break;
+                } catch (endpointError) {
+                    console.error(`Error selecting experts on ${endpoint}:`, endpointError);
+                    // Continue to try next endpoint
+                }
+            }
+
+            if (!success || !responseData) {
+                throw new Error('Failed to select experts on all endpoints');
+            }
+
+            if (!responseData.experts || !Array.isArray(responseData.experts)) {
+                throw new Error('Invalid response format: experts array missing');
+            }
+
+            const filteredExperts = responseData.experts.filter((expert: Expert) => expert.type === expertType);
+            if (filteredExperts.length === 0) {
+                throw new Error(`No ${expertType} experts were found for this topic`);
+            }
+
+            // Ensure we have one expert with "pro" stance and one with "con" stance
+            const enhancedExperts = filteredExperts.map((expert: Expert, index: number) => ({
+                ...expert,
+                stance: index === 0 ? 'pro' : 'con', // First expert is "pro", second is "con"
+                perspective: index === 0
+                    ? `I believe this is an important area that deserves our attention.`
+                    : `I think we need to carefully examine the assumptions being made in this discussion.`
+            }));
+
+            console.log('Setting experts in store:', enhancedExperts);
+            setExperts(enhancedExperts);
+            setExpertsSelected(true);
+            updateStepState('expertLoading', 'success', 'Experts selected successfully!');
+            showSuccess('Experts Selected', 'Your debate experts are ready');
+
+            // Force UI update in case it's not rendering properly
+            setTimeout(() => {
+                console.log('Experts selected and UI should be updated');
+            }, 500);
+
+            if (useVoiceSynthesis) {
+                await assignVoicesToExperts(enhancedExperts);
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const appError = createError(
+                'EXPERT_SELECTION_ERROR',
+                `Failed to select experts: ${errorMessage}`,
+                'high',
+                true,
+                { topic, expertType }
+            );
+            handleError(appError);
+            updateStepState('expertLoading', 'error', 'Failed to select experts');
+            setExpertsLoading(false);
+            setIsLoading(false);
+        }
+    };
+
+    // New helper function for voice assignment
+    const assignVoicesToExperts = async (selectedExperts: Expert[]) => {
+        updateStepState('voiceSynthesis', 'loading', 'Assigning voices to experts...');
+        try {
+            const expertsWithVoices = await Promise.all(
+                selectedExperts.map(async (expert) => {
+                    const voiceResponse = await fetch('/api/voice', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'assign-voice',
+                            expertName: expert.name,
+                            expertType: expert.type
+                        })
+                    });
+
+                    if (!voiceResponse.ok) {
+                        throw new Error(`Failed to assign voice for ${expert.name}`);
+                    }
+
+                    const voiceData = await voiceResponse.json();
+                    return { ...expert, voiceId: voiceData.voiceId };
+                })
+            );
+
+            setExperts(expertsWithVoices);
+            updateStepState('voiceSynthesis', 'success', 'Voices assigned successfully!');
+            showSuccess('Voices Assigned', 'Voice synthesis is ready');
+        } catch (error) {
+            const appError = createError(
+                'VOICE_SYNTHESIS_ERROR',
+                'Failed to assign voices to experts',
+                'medium',
+                true
+            );
+            handleError(appError);
+            updateStepState('voiceSynthesis', 'error', 'Failed to assign voices');
+        }
+    };
+
+    // Handle starting the discussion
+    const startDiscussion = async () => {
+        if (!experts.length || isGenerating) return;
+
+        setIsGenerating(true);
+        updateStepState('responseGeneration', 'loading', 'Generating initial responses...');
+
+        try {
+            await generateExpertResponses(experts, []);
+            updateStepState('responseGeneration', 'success', 'Discussion started!');
+            setTimeout(() => updateStepState('responseGeneration', 'idle'), 2000);
+        } catch (error) {
+            setErrorMessage('Failed to start the discussion');
+            updateStepState('responseGeneration', 'error', 'Failed to start the discussion');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    // Handle user input
+    const handleUserInput = (text: string) => {
+        if (text.trim() && !isGenerating && experts.length > 0) {
+            const userMessage = {
+                id: `msg_user_${Date.now()}`,
+                role: 'user' as const,
+                content: text,
+                speaker: 'You'
+            };
+
+            addMessage(userMessage);
+            setIsGenerating(true);
+            updateStepState('responseGeneration', 'loading', 'Generating responses...');
+
+            generateExpertResponses(experts, [...messages, userMessage])
+                .then(() => {
+                    updateStepState('responseGeneration', 'success', 'Responses generated!');
+                    setTimeout(() => updateStepState('responseGeneration', 'idle'), 2000);
+                })
+                .catch(error => {
+                    console.error('Error generating responses:', error);
+                    setErrorMessage('Failed to generate responses');
+                    updateStepState('responseGeneration', 'error', 'Failed to generate responses');
+                })
+                .finally(() => {
+                    setIsGenerating(false);
+                });
+        }
+    };
+
+    // Update error message when store error changes
+    useEffect(() => {
+        if (storeError) {
+            setErrorMessage(storeError);
+            setError(null); // Clear store error after displaying
+        }
+    }, [storeError, setError]);
+
+    // Scroll to bottom when messages change
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
+    // Handle file upload
+    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        event.preventDefault();
+
+        // Clear previous loading state
+        setLoadingState('');
+
+        const file = event.target.files?.[0];
+        if (!file) {
+            console.warn("No file selected");
+            showWarning('No File Selected', 'Please select a valid document file');
+            return;
+        }
+
+        // Generate a throttle key using the file name and size
+        const throttleKey = `document-analyze-${file.name}-${file.size}`;
+        const now = Date.now();
+        const lastRequestTime = requestTracker.recentRequests.get(throttleKey);
+
+        // Check if this exact file was recently uploaded (global check, not per endpoint)
+        if (lastRequestTime && (now - lastRequestTime < 5000)) {
+            console.info(`Recent duplicate file detected: ${file.name}`);
+
+            // Update UI to show warning about duplicate
+            const fileDisplay = document.getElementById('selected-file-display');
+            if (fileDisplay) {
+                fileDisplay.textContent = `Recently processed: ${file.name} - using cached results`;
+                fileDisplay.classList.remove('text-gray-400', 'text-red-400');
+                fileDisplay.classList.add('text-yellow-400');
+            }
+
+            showInfo('File Already Processed', 'This file was recently analyzed. Using cached results.');
+
+            // If we already have extracted topics from a previous run, keep using them
+            // Otherwise we'll continue to try processing the file
+            if (extractedTopics && extractedTopics.length > 0) {
+                return;
+            }
+        }
+
+        // Check file size (max 20MB)
+        const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
+        if (file.size > MAX_FILE_SIZE) {
+            console.warn("File too large:", file.size);
+            showWarning('File Too Large', 'Please select a file smaller than 20MB');
+            return;
+        }
+
+        console.log("File upload started:", file.name, file.size);
+        setLoadingState(`Analyzing document: ${file.name}...`);
+
+        // Display the selected file name to give user feedback
+        if (event.target.nextElementSibling && event.target.nextElementSibling instanceof HTMLElement) {
+            event.target.nextElementSibling.textContent = `Selected: ${file.name}`;
+        }
+
+        // API endpoints to try in order of preference
+        const apiEndpoints = [
+            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/content/document`,
+            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/content/analyze`,
+            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/analyze`
+        ];
+
+        // Immediately prepare mock topics in case all endpoints fail
+        const mockTopics = [
+            {
+                title: `Climate Change (Mock Data for "${file.name}")`,
+                confidence: 0.95,
+                arguments: [
+                    "Climate change mitigation requires immediate global action",
+                    "Renewable energy adoption must accelerate to reduce carbon emissions",
+                    "Carbon pricing is an effective economic tool for climate action"
+                ]
+            },
+            {
+                title: "AI Regulation (Mock Data)",
+                confidence: 0.88,
+                arguments: [
+                    "AI development should be subject to international oversight",
+                    "Self-regulation by tech companies is insufficient for AI safety",
+                    "Privacy concerns in AI systems need stronger legal protections"
+                ]
+            }
+        ];
+
+        try {
+            let success = false;
+            let responseData = null;
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Try each endpoint until one succeeds
+            for (const endpoint of apiEndpoints) {
+                try {
+                    console.log(`Attempting to analyze document via ${endpoint}...`);
+
+                    // For FormData uploads, we need to use the fetch API directly
+                    // but still apply our throttling logic
+
+                    // Check if this specific endpoint was recently called with this file 
+                    // (endpoint-specific check, in addition to the global check)
+                    const endpointThrottleKey = `${endpoint}-${throttleKey}`;
+                    const lastEndpointRequestTime = requestTracker.recentRequests.get(endpointThrottleKey);
+
+                    if (lastEndpointRequestTime && (now - lastEndpointRequestTime < 3000)) {
+                        console.log(`Endpoint throttled for this file: ${endpointThrottleKey}`);
+                        // Skip this endpoint and continue to the next one
+                        continue;
+                    }
+
+                    // Record this endpoint request
+                    requestTracker.recentRequests.set(endpointThrottleKey, now);
+                    console.log("Sending fetch request to:", endpoint);
+
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData,
+                        cache: 'no-store'
+                    });
+
+                    console.log(`Response from ${endpoint}:`, response.status);
+
+                    if (response.ok) {
+                        try {
+                            responseData = await response.json();
+                            console.log(`Document analysis on ${endpoint} succeeded:`, responseData);
+
+                            // Check if the response has the expected topics structure
+                            if (responseData && Array.isArray(responseData.topics) && responseData.topics.length > 0) {
+                                success = true;
+                                break;
+                            } else if (responseData && responseData.status === "success") {
+                                // Endpoint exists but doesn't have proper implementation
+                                console.info(`Endpoint ${endpoint} returns success but no topics - this is expected in development`);
+
+                                // Add mock topics to the response to simulate a successful analysis
+                                responseData.topics = mockTopics;
+                                success = true;
+
+                                // Update UI to show mock data is being used
+                                const fileDisplay = document.getElementById('selected-file-display');
+                                if (fileDisplay) {
+                                    fileDisplay.textContent = `${file.name} processed with sample topics`;
+                                    fileDisplay.classList.remove('text-gray-400', 'text-red-400');
+                                    fileDisplay.classList.add('text-yellow-400');
+                                }
+
+                                showInfo('Development Mode', 'Using sample topics since server API is simplified');
+                                break; // Use this endpoint's response with our mock data
+                            }
+                        } catch (parseError) {
+                            console.error(`Error parsing JSON from ${endpoint}:`, parseError);
+                            continue;
+                        }
+                    } else {
+                        const errorText = await response.text();
+                        console.warn(`Document analysis on ${endpoint} failed:`, response.status, errorText);
+                    }
+                } catch (endpointError) {
+                    console.error(`Error analyzing document on ${endpoint}:`, endpointError);
+                    // Continue to try next endpoint
+                }
+            }
+
+            if (!success || !responseData || !responseData.topics) {
+                // Use info level logging instead of error since we're gracefully handling this
+                console.info("Using fallback topics - API endpoints didn't return usable data");
+
+                // Always use mock data when server endpoints fail
+                console.log("Using mock topics data as fallback");
+                setExtractedTopics(mockTopics);
+                setLoadingState('');
+
+                // Update UI to show success with mock data
+                const fileDisplay = document.getElementById('selected-file-display');
+                if (fileDisplay) {
+                    fileDisplay.textContent = `Using mock topics for: ${file.name}`;
+                    fileDisplay.classList.remove('text-gray-400');
+                    fileDisplay.classList.add('text-yellow-400');
+                }
+
+                showSuccess('Document Analysis', 'Using sample topics since server analysis is unavailable');
+                return;
+            }
+
+            // Ensure topics data is valid and formatted correctly
+            if (responseData.topics && Array.isArray(responseData.topics)) {
+                setExtractedTopics(responseData.topics);
+
+                // Update UI to show success
+                const fileDisplay = document.getElementById('selected-file-display');
+                if (fileDisplay) {
+                    fileDisplay.textContent = `Successfully analyzed: ${file.name}`;
+                    fileDisplay.classList.remove('text-gray-400');
+                    fileDisplay.classList.add('text-green-400');
+                }
+            } else {
+                console.warn("Document analysis returned invalid topics data structure:", responseData);
+                setExtractedTopics([]);
+
+                // Update UI to show failure
+                const fileDisplay = document.getElementById('selected-file-display');
+                if (fileDisplay) {
+                    fileDisplay.textContent = `Analysis failed: ${file.name}`;
+                    fileDisplay.classList.remove('text-green-400');
+                    fileDisplay.classList.add('text-red-400');
+                }
+
+                throw new Error('Document analysis returned an invalid data structure');
+            }
+            setLoadingState('');
+            showSuccess('Document Analysis', 'Document analyzed successfully');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const appError = createError(
+                'API_ERROR',
+                `Failed to analyze document: ${errorMessage}`,
+                'medium',
+                true,
+                { fileName: file.name }
+            );
+            handleError(appError);
+            setLoadingState('');
+            // Reset the extractedTopics to an empty array to avoid undefined errors
+            setExtractedTopics([]);
+
+            // Update UI to show error
+            const fileDisplay = document.getElementById('selected-file-display');
+            if (fileDisplay) {
+                fileDisplay.textContent = `Error processing file: ${file.name}`;
+                fileDisplay.classList.remove('text-green-400', 'text-gray-400');
+                fileDisplay.classList.add('text-red-400');
+            }
+
+            // Create an additional error specifically for the toast
+            const docAnalysisError = createError(
+                'API_ERROR',
+                'Unable to analyze the document. Please try again or use a different file.',
+                'medium',
+                true
+            );
+            displayError(docAnalysisError);
+        } finally {
+            // Clear the file input value
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
+    };
+
+    // Trigger file input click
+    const triggerFileUpload = () => {
+        console.log("Upload button clicked, triggering file input");
+
+        // Reset any previous file selection display
+        const fileDisplay = document.getElementById('selected-file-display');
+        if (fileDisplay) {
+            fileDisplay.textContent = 'No file selected';
+            fileDisplay.classList.remove('text-green-400');
+            fileDisplay.classList.add('text-gray-400');
+        }
+
+        // Reset the file input value to allow selecting the same file again
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+
+        fileInputRef.current?.click();
+    };
+
+    // Function to load mock topics for testing
+    const loadMockTopics = () => {
+        console.log("Loading mock topics for testing");
+
+        const mockTopics = [
+            {
+                title: "Climate Change (Mock Data)",
+                confidence: 0.95,
+                arguments: [
+                    "Climate change mitigation requires immediate global action",
+                    "Renewable energy adoption must accelerate to reduce carbon emissions",
+                    "Carbon pricing is an effective economic tool for climate action",
+                    "Individual actions are important but insufficient without systemic change",
+                    "Climate justice must be central to any comprehensive solution"
+                ]
+            },
+            {
+                title: "AI Regulation (Mock Data)",
+                confidence: 0.88,
+                arguments: [
+                    "AI development should be subject to international oversight",
+                    "Self-regulation by tech companies is insufficient for AI safety",
+                    "Privacy concerns in AI systems need stronger legal protections",
+                    "Algorithmic bias can perpetuate and amplify social inequalities",
+                    "Transparency in AI decision-making systems should be mandatory"
+                ]
+            },
+            {
+                title: "Universal Basic Income (Mock Data)",
+                confidence: 0.82,
+                arguments: [
+                    "UBI could provide economic security in an increasingly automated economy",
+                    "Implementation costs may be offset by reduced bureaucracy and welfare administration",
+                    "Freedom from economic necessities could foster creativity and entrepreneurship",
+                    "Concerns about inflation and reduced work incentives need careful consideration",
+                    "Pilot programs show mixed but promising results on individual well-being"
+                ]
+            }
+        ];
+
+        setExtractedTopics(mockTopics);
+
+        // Update UI status
+        const fileDisplay = document.getElementById('selected-file-display');
+        if (fileDisplay) {
+            fileDisplay.textContent = 'Using mock topics for testing';
+            fileDisplay.classList.remove('text-gray-400', 'text-red-400');
+            fileDisplay.classList.add('text-green-400');
+        }
+
+        showSuccess('Mock Data', 'Loaded sample topics for testing');
+    };
+
+    // Toggle content analyzer
+    const toggleContentAnalyzer = () => {
+        setIsContentAnalyzerOpen(!isContentAnalyzerOpen);
+    };
+
+    // Add back the handleVoiceSynthesis function
+    const handleVoiceSynthesis = async (responses: any[], currentExperts: Expert[]) => {
+        for (const { response, expertName } of responses) {
+            try {
+                const expert = currentExperts.find(e => e.name === expertName);
+                if (!expert?.voiceId) {
+                    showWarning('Voice Synthesis', `No voice ID found for ${expertName}`);
+                    continue;
+                }
+
+                const audioResponse = await fetch('/api/voice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'synthesize',
+                        text: response,
+                        voiceId: expert.voiceId
+                    })
+                });
+
+                if (!audioResponse.ok) {
+                    throw new Error('Failed to synthesize voice');
+                }
+
+                const audioBlob = await audioResponse.blob();
+                const audio = new Audio(URL.createObjectURL(audioBlob));
+                await new Promise(resolve => {
+                    audio.onended = resolve;
+                    audio.play();
+                });
+            } catch (error) {
+                const appError = createError(
+                    'VOICE_SYNTHESIS_ERROR',
+                    `Failed to synthesize voice for ${expertName}`,
+                    'low',
+                    true,
+                    { expertName }
+                );
+                handleError(appError);
+            }
+        }
+    };
+
+    // Effect to handle rendering experts
+    useEffect(() => {
+        console.log('Expert state changed:', {
+            expertsLength: experts.length,
+            expertsSelected,
+            showExpertSelection,
+            expertType
+        });
+    }, [experts, expertsSelected, showExpertSelection, expertType]);
+
+    // Log when loading state changes
+    useEffect(() => {
+        if (loadingState) {
+            console.log("Loading state changed:", loadingState);
+        }
+    }, [loadingState]);
+
+    // Main render
+    return (
+        <div className="flex flex-col h-full">
+            {/* Progressive Loading States */}
+            <div className="fixed top-0 left-0 right-0 z-50">
+                {Object.entries(steps).map(([key, state]) => (
+                    state.state !== 'idle' && (
+                        <div
+                            key={key}
+                            className={cn(
+                                'p-2 text-center text-sm font-medium transition-all duration-300',
+                                state.state === 'loading' && 'bg-primary text-primary-foreground',
+                                state.state === 'success' && 'bg-green-500 text-white',
+                                state.state === 'error' && 'bg-destructive text-destructive-foreground'
+                            )}
+                        >
+                            <div className="flex items-center justify-center gap-2">
+                                {state.state === 'loading' && (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                )}
+                                <span>{state.message}</span>
+                            </div>
+                        </div>
+                    )
+                ))}
+            </div>
+
+            {/* Loading and Error States */}
+            {loadingState && (
+                <div className="fixed top-0 left-0 right-0 bg-primary text-primary-foreground p-2 text-center z-50 animate-fade-in-down">
+                    <div className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>{loadingState}</span>
+                    </div>
+                </div>
+            )}
+
+            {errorMessage && (
+                <div className="fixed top-0 left-0 right-0 bg-destructive text-destructive-foreground p-2 text-center z-50">
+                    {errorMessage}
+                </div>
+            )}
+
+            <div className="flex flex-col h-full max-w-4xl mx-auto p-4">
+                {/* Expert Type Selection */}
+                {!selectedParticipantType && (
+                    <div className="mb-8">
+                        <h2 className="text-xl font-semibold mb-4">Choose Your Debate Participants</h2>
+                        <p className="text-muted-foreground mb-4">Select who you want to debate with on your chosen topic</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button
+                                onClick={() => handleExpertTypeSelect('historical')}
+                                className={`p-6 rounded-lg border card ${selectedParticipantType === 'historical'
+                                    ? 'border-primary bg-primary/10'
+                                    : 'border-border hover:bg-accent'
+                                    } transition-all`}
+                            >
+                                <h3 className="text-lg font-semibold mb-2">Historical Figures</h3>
+                                <p className="text-muted-foreground text-sm">
+                                    Debate with notable personalities from history like Einstein, Aristotle,
+                                    Marie Curie, and others who bring their historical perspectives.
+                                </p>
+                            </button>
+
+                            <button
+                                onClick={() => handleExpertTypeSelect('domain')}
+                                className={`p-6 rounded-lg border card ${selectedParticipantType === 'domain'
+                                    ? 'border-primary bg-primary/10'
+                                    : 'border-border hover:bg-accent'
+                                    } transition-all`}
+                            >
+                                <h3 className="text-lg font-semibold mb-2">Domain Specialists</h3>
+                                <p className="text-muted-foreground text-sm">
+                                    Engage with AI-powered domain experts who specialize in specific fields
+                                    like technology, medicine, economics, and more.
+                                </p>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Content Analysis or Direct Topic Input */}
+                {selectedParticipantType && !topic && (
+                    <div className="space-y-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Direct Topic Input */}
+                            <div className="card">
+                                <h2 className="text-xl font-semibold mb-4">Enter Debate Topic</h2>
+                                <div className="flex flex-col gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Enter your topic..."
+                                        className="input"
+                                        value={userTopic}
+                                        onChange={(e) => setUserTopic(e.target.value)}
+                                    />
+                                    <Button
+                                        onClick={() => {
+                                            // Create a topic object with default arguments for manually entered topics
+                                            const topicData = {
+                                                title: userTopic,
+                                                confidence: 1.0,
+                                                arguments: [
+                                                    `${userTopic} is an important topic to discuss.`,
+                                                    `There are multiple perspectives on ${userTopic}.`,
+                                                    `Understanding ${userTopic} requires careful consideration of evidence.`
+                                                ]
+                                            };
+                                            handleTopicSelect(userTopic, topicData);
+                                            setTimeout(() => {
+                                                initializeDebateWithTopic();
+                                            }, 100);
+                                        }}
+                                        disabled={!userTopic.trim()}
+                                        className="mt-2 w-full"
+                                    >
+                                        Set Topic
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Content Analysis Section */}
+                            <div className="card">
+                                <h2 className="text-xl font-semibold mb-4">Upload Content</h2>
+                                <p className="text-sm text-muted-foreground mb-4">Upload a document to extract debate topics automatically</p>
+
+                                <div className="flex flex-col gap-2">
+                                    <input
+                                        type="file"
+                                        accept=".pdf,.docx,.txt"
+                                        className="hidden"
+                                        ref={fileInputRef}
+                                        onChange={handleFileUpload}
+                                        id="hidden-file-input"
+                                    />
+                                    <Button
+                                        onClick={triggerFileUpload}
+                                        variant="secondary"
+                                        className="w-full flex items-center justify-center gap-2"
+                                    >
+                                        <Upload className="h-4 w-4" />
+                                        <span>Upload Document</span>
+                                    </Button>
+
+                                    {/* File selection status */}
+                                    <div className="text-xs text-green-400 text-center mt-1" id="selected-file-display">
+                                        No file selected
+                                    </div>
+
+                                    {/* Direct file input for testing */}
+                                    <div className="mt-2 p-2 border border-dashed border-gray-600 rounded-lg">
+                                        <p className="text-xs text-gray-400 mb-2">Or select a file directly:</p>
+                                        <div className="relative">
+                                            <input
+                                                type="file"
+                                                accept=".pdf,.docx,.txt"
+                                                className="w-full text-xs text-gray-400 cursor-pointer file:mr-4 file:py-2 file:px-4
+                                                file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-primary
+                                                file:text-white hover:file:bg-primary/90"
+                                                onChange={handleFileUpload}
+                                            />
+                                            <span className="text-xs text-gray-400 block mt-1"></span>
+                                        </div>
+                                    </div>
+
+                                    {/* Testing button for mock data */}
+                                    <Button
+                                        onClick={loadMockTopics}
+                                        variant="default"
+                                        size="default"
+                                        className="mt-4 w-full"
+                                    >
+                                        <span className="flex items-center justify-center gap-2">
+                                            Skip File Upload & Load Sample Topics
+                                        </span>
+                                    </Button>
+
+                                    <p className="text-xs text-gray-500 text-center mt-2">
+                                        PDF, DOCX, TXT (MAX. 20MB)
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Display Extracted Topics */}
+                        {extractedTopics && extractedTopics.length > 0 && (
+                            <div className="border rounded-lg p-6 bg-gray-800/50">
+                                <h2 className="text-xl font-semibold text-white mb-4">Extracted Topics</h2>
+                                <p className="text-sm text-gray-400 mb-4">Select a topic to start your debate</p>
+
+                                <div className="space-y-4">
+                                    {extractedTopics?.map((topic, index) => (
+                                        <div
+                                            key={index}
+                                            className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedTopic === index.toString()
+                                                ? 'border-primary bg-primary/10 text-white'
+                                                : 'border-gray-700 bg-gray-800/50 text-gray-300 hover:bg-gray-800'
+                                                }`}
+                                            onClick={() => setSelectedTopic(index.toString())}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="font-medium">{topic.title}</h3>
+                                                <span className="text-xs bg-gray-700 px-2 py-1 rounded">
+                                                    {Math.round(topic.confidence * 100)}% confidence
+                                                </span>
+                                            </div>
+                                            {selectedTopic === index.toString() && (
+                                                <div className="mt-4 space-y-2">
+                                                    {topic.arguments && Array.isArray(topic.arguments) && topic.arguments.map((arg, i) => (
+                                                        <p key={i} className="text-sm text-gray-400">{arg}</p>
+                                                    ))}
+                                                    <div className="mt-4 flex justify-end">
+                                                        <Button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleTopicSelect(topic.title, topic);
+                                                                setTimeout(() => {
+                                                                    initializeDebateWithTopic();
+                                                                }, 100);
+                                                            }}
+                                                        >
+                                                            Use This Topic
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {loadingState && (
+                            <div className="border rounded-lg p-6 mt-4 bg-gray-700/50 text-center">
+                                <div className="flex items-center justify-center space-x-2 p-4">
+                                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                    <span className="text-white font-medium">{loadingState}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {(!extractedTopics || extractedTopics.length === 0) && !loadingState && (
+                            <div className="text-center text-sm text-gray-400">
+                                <p>Choose one of the options above to start your debate</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Meet Experts Button */}
+                {topic && !experts.length && !showExpertSelection && (
+                    <div className="flex justify-center my-8">
+                        <Button
+                            onClick={() => {
+                                setShowExpertSelection(true);
+                                selectExperts();
+                            }}
+                            size="lg"
+                            className="animate-pulse"
+                        >
+                            Meet Your Experts
+                        </Button>
+                    </div>
+                )}
+
+                {/* Expert Display and Debate Section */}
+                {(experts.length > 0 || (expertsSelected && showExpertSelection)) && (
+                    <div className="space-y-6 mt-8">
+                        <h3 className="text-xl font-semibold text-white text-center">Your Debate Experts</h3>
+
+                        {experts.length > 0 ? (
+                            <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
+                                {experts.map((expert) => (
+                                    <ExpertCard key={expert.id} expert={expert} />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex justify-center p-4">
+                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                <p className="ml-2 text-gray-400">Loading your experts...</p>
+                            </div>
+                        )}
+
+                        {/* Step 4: Start Discussion */}
+                        {expertsSelected && messages.length === 0 && experts.length > 0 && (
+                            <div className="mt-6 flex justify-center">
+                                <Button
+                                    onClick={startDiscussion}
+                                    disabled={isGenerating}
+                                    size="lg"
+                                >
+                                    {isGenerating ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Starting Discussion...
+                                        </>
+                                    ) : (
+                                        'Start Discussion'
+                                    )}
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Debate Section */}
+                {messages.length > 0 && (
+                    <>
+                        <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+                            {messages.map((message) => (
+                                <MessageBubble
+                                    key={message.id}
+                                    message={message}
+                                    experts={experts}
+                                    audioRef={audioRef}
+                                />
+                            ))}
+                            {isGenerating && (
+                                <div className="flex justify-center">
+                                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
+                        </div>
+
+                        <UserInput onSubmit={handleUserInput} disabled={isGenerating} />
+                    </>
+                )}
+
+                {/* Extracted topics from document */}
+                {extractedTopics.length > 0 && (
+                    <div className="mt-6">
+                        <h3 className="text-lg font-semibold mb-4">Suggested Debate Topics</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {extractedTopics.map((topic, index) => (
+                                <button
+                                    key={index}
+                                    onClick={() => {
+                                        handleTopicSelect(topic.title, topic);
+                                        setTimeout(() => {
+                                            initializeDebateWithTopic();
+                                        }, 100);
+                                    }}
+                                    className={`card p-4 text-left hover:bg-accent transition-colors ${selectedTopic === topic.title ? 'border-2 border-primary' : 'border border-border'
+                                        }`}
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className="font-medium text-md">{topic.title}</h4>
+                                        <span className="text-xs px-2 py-1 rounded-full bg-muted text-foreground">
+                                            {Math.round(topic.confidence * 100)}% confidence
+                                        </span>
+                                    </div>
+                                    <div className="my-2">
+                                        <div className="text-sm text-muted-foreground mb-1">Key arguments:</div>
+                                        <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
+                                            {topic.arguments.slice(0, 2).map((arg, i) => (
+                                                <li key={i} className="truncate">{arg}</li>
+                                            ))}
+                                            {topic.arguments.length > 2 && (
+                                                <li className="text-muted-foreground">+{topic.arguments.length - 2} more arguments</li>
+                                            )}
+                                        </ul>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Return button if participant type is selected */}
+                {selectedParticipantType && (
+                    <div className="mt-6 flex justify-start">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setSelectedParticipantType(null);
+                                setExtractedTopics([]);
+                                setSelectedTopic(null);
+                            }}
+                            className="text-sm"
+                        >
+                            Back to Participant Selection
+                        </Button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+} 

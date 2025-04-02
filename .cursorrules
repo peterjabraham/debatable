@@ -1,0 +1,167 @@
+You are an AI assistant helping to optimize a Next.js v15 + React application. The application has the following characteristics and constraints:
+
+1. **Codebase Structure:**
+here's a comprehensive file tree of the Debate-Aible project:
+debate-able/
+├── .git/
+├── .gitignore
+├── .next/
+├── .windsurfrules
+├── GOOGLE_CLOUD_SETUP.md
+├── README.md
+├── crank-debate-3fb8b83d39dc.json
+├── debate-able.code-workspace
+├── docs/
+│   ├── Potential-issues.md
+│   ├── README.md
+│   ├── Status.md
+│   ├── assets/
+│   │   └── screenshots/
+│   └── backend-architecture.mermaid
+├── eslint.config.mjs
+├── next-env.d.ts
+├── next.config.ts
+├── node_modules/
+├── package-lock.json
+├── package.json
+├── postcss.config.mjs
+├── public/
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── auth/
+│   │   │   │   └── [...nextauth]/
+│   │   │   ├── content/
+│   │   │   │   ├── document/
+│   │   │   │   ├── link/
+│   │   │   │   └── media/
+│   │   │   ├── debate/
+│   │   │   ├── user/
+│   │   │   │   ├── account/
+│   │   │   │   │   └── delete/
+│   │   │   │   ├── preferences/
+│   │   │   │   └── profile/
+│   │   │   │       └── update/
+│   │   │   └── voice/
+│   │   ├── app/
+│   │   │   ├── debate/
+│   │   │   └── layout.tsx
+│   │   ├── auth/
+│   │   ├── favicon.ico
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   ├── profile/
+│   │   ├── providers.tsx
+│   │   └── settings-test/
+│   ├── components/
+│   │   ├── ThemeProvider.tsx
+│   │   ├── ThemeToggle.tsx
+│   │   ├── UserNavigation.tsx
+│   │   ├── content-processing/
+│   │   │   └── ContentUploader.tsx
+│   │   ├── debate/
+│   │   │   ├── DebatePanel.tsx
+│   │   │   ├── DebateSummary.tsx
+│   │   │   ├── ExpertCard.tsx
+│   │   │   ├── ExpertTypeSelector.tsx
+│   │   │   ├── MessageBubble.tsx
+│   │   │   └── UserInput.tsx
+│   │   └── ui/
+│   │       ├── button.tsx
+│   │       ├── input.tsx
+│   │       └── [other UI components]
+│   ├── lib/
+│   │   ├── auth.ts
+│   │   ├── content-processing/
+│   │   ├── contexts/
+│   │   ├── db/
+│   │   ├── elevenlabs.ts
+│   │   ├── mock/
+│   │   ├── openai.ts
+│   │   └── store.ts
+│   └── types/
+│       ├── expert.ts
+│       ├── message.ts
+│       └── user.ts
+├── tailwind.config.ts
+├── tsconfig.json
+└── uploads/
+
+Project Structure Breakdown:
+Configuration Files:
+package.json - Project dependencies and scripts
+next.config.ts - Next.js configuration
+tailwind.config.ts - Tailwind CSS configuration
+tsconfig.json - TypeScript configuration
+eslint.config.mjs - ESLint configuration
+Source Code (src/):
+App Directory (app/): Next.js App Router structure
+api/ - Backend API routes for auth, content processing, debate, user management, and voice synthesis
+app/ - Main application pages including the debate feature
+page.tsx - Landing page
+Components (components/):
+debate/ - Components for the debate feature (DebatePanel, ExpertCard, etc.)
+content-processing/ - Components for content uploading and processing
+ui/ - Reusable UI components (buttons, inputs, etc.)
+Library (lib/):
+auth.ts - Authentication utilities
+elevenlabs.ts - Voice synthesis integration
+openai.ts - OpenAI integration
+store.ts - State management
+Various utility directories for content processing, database access, etc.
+Types (types/):
+Type definitions for experts, messages, and users
+Public Assets (public/):
+SVG files and other static assets
+Documentation (docs/):
+Project documentation, architecture diagrams, and screenshots
+Uploads (uploads/):
+Directory for user-uploaded content
+This Next.js application follows a well-organized structure with clear separation of concerns between API routes, UI components, and business logic. The codebase is built with TypeScript and uses modern React patterns with the Next.js App Router architecture.
+
+2. **Current Functionality (Must Remain Intact):**
+   - All core features of the existing application must continue to work.
+   - The critical functionality includes:
+     - User authentication and session management
+     - Reading and writing chat messages through Firebase
+     - Rendering UI components as they are currently designed
+   - No additional features should be introduced beyond improving performance.
+
+3. **Goal and Scope:**
+   - Focus strictly on performance improvements and optimization.
+   - Do not add new functionality or change user-facing features without explicit instruction.
+   - Propose changes that can be integrated into existing files (avoid creating extra files unless absolutely necessary).
+
+4. **Key Performance Concern:**
+   - Firebase chat context retrieval is a bottleneck. Provide strategies to reduce unnecessary fetches, manage data more efficiently, or minimize repeated renders.
+
+5. **Constraints and Directives:**
+   - Maintain the integrity of the existing code structure, naming conventions, and style.
+   - Suggest optimizations that respect best practices in Next.js, React, and Firebase usage.
+   - Do not remove or alter any business logic or critical application flows outside the scope of performance enhancements.
+
+6. **Instructions for Proposed Changes:**
+   - Provide a step-by-step explanation for each proposed modification, including:
+     - The file(s) to be changed
+     - The code snippet(s) to be updated or refactored
+     - Justification for why this change improves performance
+   - If the change impacts more than one file, explain dependencies among the changes.
+
+7. **Testing and Validation:**
+   - Suggest test scenarios or checks to ensure no critical features are broken.
+   - Provide a high-level overview of how to measure performance improvements (e.g., load times, reduced re-renders, faster API responses).
+
+8. **Requests for Clarification:**
+   - If you require more details about our folder structure, environment variables, or specific code snippets, explicitly ask for them.
+
+9. **Summary Confirmation:**
+   - After proposing changes, restate how each solution preserves existing functionality and meets the performance goal.
+   - Confirm that you have not introduced any new features beyond performance-related changes.
+
+Analyze the application under these conditions, propose optimizations, and follow the above instructions carefully. When describing your solution, include relevant code blocks and justification. If you need more information, explicitly request the specific details from me.

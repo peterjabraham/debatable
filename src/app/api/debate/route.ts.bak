@@ -1,0 +1,126 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { Message } from '@/types/message';
+import { Expert } from '@/types/expert';
+import { v4 as uuidv4 } from 'uuid';
+import { DebateStorage } from '@/lib/storage/debate-storage';
+import { selectExperts } from '@/lib/ai/expert-selector';
+import { generateResponse } from '@/lib/ai/response-generator';
+
+// Handle all debate-related API requests
+export async function POST(request: NextRequest) {
+    console.log('Debate API POST called - simplified version');
+
+    try {
+        const body = await request.json();
+
+        // Just return the received data for now
+        return NextResponse.json({
+            status: 'success',
+            message: 'Debate API received request (simplified version)',
+            receivedData: body,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error in simplified debate API:', error);
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Unknown error' },
+            { status: 500 }
+        );
+    }
+}
+
+// Handle GET requests
+export async function GET(request: NextRequest) {
+    console.log('Debate API GET called - simplified version');
+
+    // Basic test response
+    return NextResponse.json({
+        status: 'success',
+        message: 'Debate API is working (simplified version)',
+        timestamp: new Date().toISOString()
+    });
+}
+
+// Helper functions for POST actions
+async function handleSelectExperts(req: any) {
+    const { topic, expertType = 'historical', count = 2 } = req;
+
+    if (!topic) {
+        return NextResponse.json({ error: 'Topic is required' }, { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    try {
+        const experts = await selectExperts(topic, expertType, count);
+        return NextResponse.json({ experts }, { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error: any) {
+        console.error('Error selecting experts:', error);
+        return NextResponse.json(
+            { error: error.message || 'Failed to select experts' },
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+    }
+}
+
+async function handleInitializeDebate(body: any) {
+    const { topic, expertType, userId } = body;
+
+    if (!topic || !expertType || !userId) {
+        return NextResponse.json(
+            { error: 'Missing required fields: topic, expertType, userId' },
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+    }
+
+    try {
+        const debateId = uuidv4();
+        const experts = await selectExperts(topic, expertType, 2);
+
+        const debateStorage = await DebateStorage.getInstance();
+        await debateStorage.initializeDebate(debateId, topic, experts, userId);
+
+        return NextResponse.json({ debateId, topic, experts }, { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error: any) {
+        console.error('Error initializing debate:', error);
+        return NextResponse.json(
+            { error: error.message || 'Failed to initialize debate' },
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+    }
+}
+
+async function handleGenerateResponse(body: any) {
+    const { expert, topic, messages, useCitations = true, debateId } = body;
+
+    if (!expert || !topic || !messages) {
+        return NextResponse.json(
+            { error: 'Missing required fields: expert, topic, messages' },
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+    }
+
+    try {
+        const result = await generateResponse(expert, topic, messages, useCitations);
+
+        if (debateId) {
+            const newMessage = {
+                id: uuidv4(),
+                role: 'assistant' as const,
+                content: result.response,
+                speaker: expert.name,
+                timestamp: new Date().toISOString(),
+                usage: result.usage
+            };
+
+            const debateStorage = await DebateStorage.getInstance();
+            await debateStorage.addMessage(debateId, newMessage);
+        }
+
+        return NextResponse.json(result, { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error: any) {
+        console.error('Error generating response:', error);
+        return NextResponse.json(
+            { error: error.message || 'Failed to generate response' },
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+    }
+} 

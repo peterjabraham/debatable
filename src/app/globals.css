@@ -1,0 +1,220 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply min-h-screen;
+  }
+
+  body {
+    @apply bg-background text-foreground font-light text-[0.85rem] antialiased;
+  }
+
+  p,
+  span,
+  div,
+  label,
+  input,
+  textarea {
+    @apply font-light text-[0.85rem];
+  }
+
+  h1 {
+    @apply font-normal text-[1.7rem] mb-4;
+  }
+
+  h2 {
+    @apply font-normal text-[1.36rem] mb-3;
+  }
+
+  h3 {
+    @apply font-normal text-[1.19rem] mb-2;
+  }
+
+  h4 {
+    @apply font-normal text-[1.02rem] mb-2;
+  }
+
+  h5,
+  h6 {
+    @apply font-normal text-[0.85rem] mb-1;
+  }
+
+  a {
+    @apply text-primary hover:text-primary/80 transition-colors;
+  }
+
+  section {
+    @apply py-10 md:py-16;
+  }
+
+  main {
+    @apply container mx-auto px-4 py-8 max-w-7xl;
+  }
+
+  button,
+  .button,
+  [type="button"],
+  [type="submit"] {
+    @apply font-bold text-[0.85rem] transition-all duration-200 ease-in-out;
+  }
+}
+
+@layer components {
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  .text-xs {
+    font-size: 0.68rem !important;
+  }
+
+  .text-sm {
+    font-size: 0.77rem !important;
+  }
+
+  .text-base {
+    font-size: 0.85rem !important;
+  }
+
+  .text-lg {
+    font-size: 1.02rem !important;
+  }
+
+  .text-xl {
+    font-size: 1.19rem !important;
+  }
+
+  .text-2xl {
+    font-size: 1.36rem !important;
+  }
+
+  .card {
+    @apply bg-card text-card-foreground rounded-lg border shadow-sm p-6;
+  }
+
+  .input {
+    @apply flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+
+  .container {
+    @apply px-4 mx-auto;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-down {
+  animation: fade-in-down 0.2s ease-out;
+}
+
+.flex-center {
+  @apply flex items-center justify-center;
+}
+
+.grid-center {
+  @apply grid place-items-center;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-in forwards;
+}
