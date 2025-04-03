@@ -10,7 +10,7 @@ import { getMultiExpertRecommendedReading } from '@/lib/api/perplexity';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown } from 'lucide-react';
-import { EnvDebug, PerplexityDebug } from '@/components/debug';
+import { EnvDebug } from '@/components/debug';
 import { PerplexityService, type ReadingError } from '@/lib/services/PerplexityService';
 import { ReadingListItem } from './ReadingListItem';
 
@@ -274,10 +274,6 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
                 )}
             </div>
             <EnvDebug />
-            {/* Add Perplexity Debug Component */}
-            <div className="mt-6 pt-6 border-t">
-                <PerplexityDebug />
-            </div>
         </div>
     );
 } 
