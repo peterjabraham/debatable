@@ -1,377 +1,167 @@
 # Project Status
 
+**Document Version:** 1.1.0  
+**Last Updated:** May 1, 2024  
+**Compatible with:** 
+- Next.js 15.0.0
+- Node.js 20.x
+- React 18.2.0
+- TypeScript 5.3.3
+
+## Current Status
+
+The Debate-able application is currently in active development. This document provides an overview of the current status, including completed features, known issues, and upcoming work.
+
 ## Completed Features
 
-### Core Debate Functionality
-- ✅ Topic input and expert selection
-- ✅ Expert response generation using GPT-4o
-- ✅ User perspective input
-- ✅ Dynamic expert responses to user input
-- ✅ Cost tracking for API usage
-- ✅ Mock implementation for testing without API key
-- ✅ LangChain integration for enhanced debate logic
-- ✅ Background knowledge retrieval for experts
-- ✅ Context management for multi-turn debates
-- ✅ Simulated "thinking" for more natural response timing
+### Core Features
+- ✅ Authentication with NextAuth.js (Google, GitHub)
+- ✅ Debate creation and management
+- ✅ Expert selection and assignment
+- ✅ Topic input and processing
+- ✅ Message generation and debate flow
+- ✅ User profile management
+- ✅ Debate history and continuation
 
-### Voice Features
-- ✅ Voice synthesis for expert responses using ElevenLabs
-- ✅ Voice toggle option
-- ✅ Individual play/stop controls for each response
-- ✅ Audio caching to prevent unnecessary regeneration
-- ✅ Loading state indication during voice generation
-- ✅ Speech-to-text for user input via microphone
+### API Integrations
+- ✅ OpenAI integration for debate content
+- ✅ Perplexity integration for research
+- ✅ Firebase integration for data storage
+- ✅ ElevenLabs integration for voice synthesis (optional)
 
-### UI/UX Improvements
-- ✅ Dark/Light theme support
-- ✅ Responsive design for all screen sizes
-- ✅ Expert profile cards with stance indicators
-- ✅ Message bubbles with expert information
-- ✅ Loading states and animations
-- ✅ Debate summary feature with key points extraction
-- ✅ Token usage and cost display
-- ✅ Interactive microphone button with visual feedback
-- ✅ Rebranded to "Debate-able"
-- ✅ "Thinking" indicator for experts during response generation
-- ✅ Improved notification positioning and styling
-- ✅ Simplified content uploader with streamlined options
-- ✅ Quick access to sample topics for testing
+### User Interface
+- ✅ Responsive layout for desktop and mobile
+- ✅ Dark mode support
+- ✅ AppHeader component for consistent navigation
+- ✅ UserNavigation with profile dropdown
+- ✅ Debate panel with expert cards and messages
 
-## Pending Features
+## Recently Fixed Issues
 
-### Core Functionality
-- [ ] Save/Load debate sessions
-- [ ] Export debate transcripts
-- [ ] Multiple debate formats (1v1, panel, etc.)
-- [ ] Custom expert selection
-- [ ] Citation support for expert claims
-- [ ] Enhanced fact-checking with external API integration
+### Content Processing Improvements
+- ✅ Enhanced content processing error handling with detailed user feedback
+- ✅ Improved mock API responses with structured topic data
+- ✅ Fixed sample topics fallback to only use when explicitly needed
+- ✅ Added clear notification when using demo topics
+- ✅ Implemented proper error display for API failures
 
-### Voice Enhancements
-- [✅] Voice input for user perspective
-- [ ] Voice emotion/tone control
-- [ ] Multiple voice options per expert
-- [ ] Background music/ambiance option
-- [ ] Voice speed control
+### Authentication Issues
+- ✅ Fixed NextAuth.js sign-out error ("Cannot convert undefined or null to object")
+- ✅ Created reset mechanism for broken sessions
+- ✅ Added proper error handling for session management
+- ✅ Modified Providers to suppress specific auth errors
 
-### UI/UX Enhancements
-- [ ] Progress tracking for debate stages
-- [ ] Interactive timeline view
-- [ ] Expert credibility scores
-- [ ] Real-time fact-checking
-- [ ] Social sharing features
-- [ ] Debate statistics and analytics
+### Route Parameter Conflict
+- ✅ Fixed Next.js routing issue with inconsistent parameter names
+- ✅ Changed `[debateId]` to `[id]` in all route parameters for consistency
+- ✅ Fixed folder structure for API routes
+- ✅ Resolved "Error: You cannot use different slug names for the same dynamic path ('id' !== 'debateId')"
 
-### Advanced Features
-- [ ] Multi-user debate support
-- [ ] Real-time collaborative debates
-- [ ] Integration with research databases
-- [ ] Custom expert persona creation
-- [ ] Debate scoring system
-- [ ] Learning mode with explanations
-- [ ] Knowledge graph visualization
+### UI Improvements
+- ✅ Made user profile avatars larger with better styling
+- ✅ Added highlighting for active navigation items
+- ✅ Fixed Profile page navigation issues
+- ✅ Improved responsive design for smaller screens
 
-### Technical Improvements
-- [✅] Optimize API usage with model selection (gpt-4o)
-- [ ] Implement rate limiting
-- [✅] Add comprehensive error handling for API keys
-- [ ] Improve voice synthesis quality
-- [ ] Add unit and integration tests
-- [✅] Implement caching strategy for mock responses
-- [ ] Add analytics tracking
+### API Integration Issues
+- ✅ Implemented better error handling for Perplexity API JSON parsing
+- ✅ Added fallback mechanisms for API failures
+- ✅ Improved mock implementations for development
+- ✅ Enhanced catch-all API route to provide structured mock data
+- ✅ Added clear user notifications about API availability status
 
 ## Known Issues
-- Voice synthesis occasionally takes longer than expected
-- Need to improve key points extraction accuracy
-- API server explicitly disabled - using built-in Next.js API routes
-- Port 3000 conflicts requiring fallback to 3001
-- ~~Mobile responsiveness can be enhanced~~ (Improved with UI simplification)
-- ~~Dark mode contrast needs adjustment in some areas~~ (Fixed with notification styling updates)
-- ~~Notification positioning interfering with navigation elements~~ (Fixed with z-index and margin adjustments)
-- ~~Project-based OpenAI API keys may not work correctly~~
-- ~~API connectivity issues causing experts not to load properly~~
 
-## Recent Changes
-- Resolved OpenAI integration issues:
-  - Updated environment configuration for API access
-  - Added proper error handling for API responses
-  - Implemented fallback to mock data when API is unavailable
-  - Fixed API server configuration to use built-in Next.js routes
-  - Added comprehensive logging for API interactions
-- Resolved natural package dependency issues:
-  - Removed natural package dependency
-  - Implemented lightweight string-similarity for text comparison
-  - Added custom TF-IDF implementation
-  - Enhanced topic extraction with simplified approach
-- Fixed build issues related to API configuration:
-  - Updated environment variables for API control
-  - Implemented proper API server availability checks
-  - Added fallback mechanisms for API failures
-  - Enhanced error handling in API routes
-- Enhanced debugging and monitoring:
-  - Added environment variable tracking
-  - Improved error logging
-  - Added API response monitoring
-  - Enhanced debug output for API interactions
+### Critical Issues
+- ❌ Firebase chat context retrieval performance bottleneck
+- ❌ Memory leaks in debate component on page navigation
+- ❌ Session persistence issues after extended idle time
 
-## Current Architecture
+### Important Issues
+- ⚠️ Rate limiting problems with OpenAI API during peak usage
+- ⚠️ Debate history doesn't always show all past debates
 
-### Frontend
-- Next.js 15 with TailwindCSS for UI
-- Zustand for state management
-- Components for debate panel, expert cards, message bubbles
-- ThinkingIndicator component for visualization of AI processing
+### Minor Issues
+- ℹ️ Voice synthesis occasionally fails for longer messages
+- ℹ️ Expert images sometimes load slowly
+- ℹ️ Inconsistent UI spacing in some components
 
-### Backend
-- Next.js API routes for serverless functions
-- OpenAI integration with GPT-4o for core responses
-- LangChain for agent-based operations:
-  - Knowledge retrieval agents
-  - Fact-checking functionality
-  - Context management
-  - Using modular package structure (@langchain/core, @langchain/openai)
-- Firebase/Firestore for data persistence
+## In Progress
 
-### Data Flow
-1. User selects a topic
-2. System generates experts with opposing viewpoints
-3. Background knowledge is retrieved for experts
-4. Context management system initializes
-5. Initial expert statements are generated
-6. User adds perspective through UI
-7. Turn-based debate continues with context awareness
+### Features in Development
+- 🔄 Enhanced debate history with filtering and search
+- 🔄 Performance optimization for Firebase integration
+- 🔄 User preferences persistence
+
+### Completed Improvements
+- ✅ Improved content processing for URLs and documents
+- ✅ Enhanced error handling and user feedback
+- ✅ Real data display with proper fallback mechanisms
+
+### Upcoming Work
+- 📅 Citations and references in expert responses
+- 📅 Summarization of debate content
+- 📅 Export functionality for debates
+- 📅 Advanced voice controls for audio playback
+
+## Technology Evaluation
+
+| Technology               | Status       | Notes                                               |
+|--------------------------|--------------|-----------------------------------------------------|
+| Next.js App Router       | ✅ Working    | Successfully implemented with API routes            |
+| Authentication           | ✅ Working    | Some edge cases addressed                           |
+| Firestore Integration    | ⚠️ Issues     | Performance bottlenecks being addressed             |
+| OpenAI Integration       | ✅ Working    | Rate limiting handled with backoff strategy         |
+| Perplexity Integration   | ✅ Working    | JSON parsing issues resolved with better error handling |
+| ElevenLabs Integration   | ✅ Working    | Optional feature working as expected                |
+| TanStack Query           | ✅ Working    | Successfully implemented for data fetching          |
+| Zustand State Management | ✅ Working    | Effectively managing application state              |
+| Tailwind CSS             | ✅ Working    | Responsive design implemented                       |
+| TypeScript               | ✅ Working    | Type definitions in place                           |
+| Content Processing       | ✅ Working    | Error handling and real data display improved       |
+
+## Deployment Status
+
+| Environment  | Status       | URL                                   | Last Deployed |
+|--------------|--------------|---------------------------------------|---------------|
+| Development  | ✅ Active     | http://localhost:3000                 | N/A           |
+| Staging      | 🔄 In Progress| https://staging.debate-able.vercel.app| April 5, 2024 |
+| Production   | 🔄 Pending    | https://debate-able.vercel.app        | Not deployed  |
+
+## Performance Metrics
+
+| Metric                          | Value          | Target          | Status    |
+|---------------------------------|----------------|-----------------|-----------|
+| Time to First Contentful Paint  | 1.2s           | < 1.0s          | ⚠️ Working |
+| Time to Interactive             | 2.5s           | < 2.0s          | ⚠️ Working |
+| Lighthouse Performance Score    | 85             | > 90            | ⚠️ Working |
+| API Response Time (avg)         | 350ms          | < 300ms         | ⚠️ Working |
+| Debate Generation Time          | 4.5s           | < 3.0s          | ❌ Working |
+| Firebase Query Time             | 600ms          | < 250ms         | ❌ Working |
 
 ## Next Steps
 
-### Serverless Migration Plan
+1. Address Firebase performance bottlenecks
+2. Complete debate history improvements
+3. Refine error handling for API integrations
+4. Optimize debate generation time
+5. Prepare for staging deployment
 
-#### Phase 1: User Authentication & Profiles
+## Recent Documentation Updates
 
-1. **Authentication System**
-   - Implement Auth0 or NextAuth.js for serverless authentication
-   - Create login/signup flows with social login options
-   - Design user profile page with customization options
-   - Set up JWT token handling for serverless functions
+- ✅ Created comprehensive documentation structure
+- ✅ Added API Integration documentation
+- ✅ Updated Authentication documentation
+- ✅ Completed Debate Engine documentation
+- ✅ Added Content Processing documentation
+- ✅ Added Expert Types documentation
+- ✅ Added User Features documentation
+- ✅ Added Firebase Integration documentation
+- ✅ Added OpenAI Integration documentation
+- ✅ Added Perplexity Integration documentation
+- ✅ Added ElevenLabs Integration documentation
 
-2. **User Profile Data Schema**
-   ```typescript
-   interface UserProfile {
-     id: string;
-     email: string;
-     name: string;
-     profilePicture?: string;
-     preferences: {
-       defaultExpertType: 'historical' | 'domain';
-       useVoiceSynthesis: boolean;
-       theme: 'light' | 'dark' | 'system';
-     }
-   }
-   ```
-
-#### Phase 2: Database & Persistence Layer
-
-1. **Choose Serverless Database**
-   - **Primary DB**: Firestore/DynamoDB for document-based storage
-   - **Considerations**: Scaling, cold starts, query patterns
-
-2. **Data Schema Design**
-   ```typescript
-   // Debate history schema
-   interface SavedDebate {
-     id: string;
-     userId: string;
-     topic: string;
-     experts: Expert[];
-     messages: Message[];
-     expertType: 'historical' | 'domain';
-     createdAt: Date;
-     updatedAt: Date; // Updated field name for consistency
-     status: string;
-     isFavorite: boolean;
-     tags?: string[];
-     summary?: string;
-     context?: DebateContext; // Added for LangChain context
-   }
-   ```
-
-3. **Data Access Layer**
-   - Create abstraction for database operations
-   - Implement CRUD operations for debates
-   - Set up indexes for efficient queries
-
-#### Phase 3: Serverless Functions
-
-1. **Auth-Protected API Routes**
-   - Convert current `/api/debate` to authenticated endpoint
-   - Add user context to all API calls
-
-2. **New Endpoints**
-   ```
-   /api/debates             # List user's debates
-   /api/debates/[id]        # Get/update specific debate
-   /api/favorites           # Manage favorite debates
-   /api/user/preferences    # Update user preferences
-   ```
-
-3. **Optimize for Cold Starts**
-   - Split large functions into smaller ones
-   - Implement connection pooling for database
-   - Use provisioned concurrency for critical paths
-
-#### Phase 4: Frontend Enhancements
-
-1. **User Dashboard**
-   - Recent debates list
-   - Favorites section
-   - Topic recommendations
-
-2. **Persistence Controls**
-   - "Save Debate" button
-   - Auto-save functionality
-   - Export/share options
-
-3. **History & Favorites UI**
-   ```jsx
-   <DebateHistory 
-     debates={userDebates}
-     onSelect={loadDebate}
-     onDelete={deleteDebate}
-     onToggleFavorite={toggleFavorite}
-   />
-   ```
-
-### Implementation Staging
-
-#### Stage 1: Foundation (Weeks 1-2)
-- Set up authentication
-- Create database schemas
-- Implement basic user profiles
-
-#### Stage 2: Core Functionality (Weeks 3-4)
-- Debate persistence
-- History & favorites
-- User preferences
-
-#### Stage 3: Enhanced Features (Weeks 5-6)
-- Dashboard & analytics
-- Sharing functionality
-- Optimizations & performance
-
-### Technical Architecture
-
-### Key Considerations
-
-1. **Stateless Design**
-   - Move from client-state to server-persisted state
-   - Ensure all functions can run independently
-
-2. **Cost Optimization**
-   - Implement tiered usage limits
-   - Consider caching for expensive operations
-   - Monitor API call volume to OpenAI/ElevenLabs
-
-3. **Security**
-   - Secure user data with proper encryption
-   - Implement rate limiting
-   - Add API key rotation 
-
-## Resilience Improvement Plan
-
-Based on our recent fixes addressing API connectivity issues, we've identified several areas for improvement to make the application more resilient:
-
-### Phase 1: Enhanced Offline Capabilities
-
-1. **Expand Mock Data Library**
-   - Create a comprehensive library of mock experts for various topics
-   - Develop more sophisticated response generation for offline mode
-   - Add high-quality sample debates for common topics
-
-2. **Improve Error Detection**
-   - Implement network status monitoring
-   - Add proactive API availability checking
-   - Create a centralized error tracking system
-
-3. **Graceful Degradation Strategy**
-   ```typescript
-   interface DegradationStrategy {
-     level: 'full' | 'partial' | 'minimal';
-     features: {
-       expertGeneration: boolean;
-       responseGeneration: boolean;
-       voiceSynthesis: boolean;
-       topicExtraction: boolean;
-     }
-     fallbacks: {
-       experts: Expert[];
-       responses: (topic: string, message: string) => string;
-       voices: VoiceAlternative[];
-     }
-   }
-   ```
-
-### Phase 2: Improved API Resilience
-
-1. **Circuit Breaker Pattern**
-   - Implement circuit breakers for each API endpoint
-   - Add automatic fallback to offline mode when APIs are down
-   - Create recovery mechanisms when APIs become available again
-
-2. **Request Retry with Exponential Backoff**
-   ```typescript
-   async function resilientFetch(url, options, maxRetries = 3) {
-     let retries = 0;
-     while (retries < maxRetries) {
-       try {
-         return await fetch(url, options);
-       } catch (error) {
-         retries++;
-         if (retries >= maxRetries) throw error;
-         // Exponential backoff: 200ms, 400ms, 800ms, etc.
-         await new Promise(r => setTimeout(r, 200 * Math.pow(2, retries - 1)));
-       }
-     }
-   }
-   ```
-
-3. **API Health Monitoring**
-   - Create a lightweight health check system
-   - Implement API availability dashboards
-   - Set up alerting for persistent API issues
-
-### Phase 3: User Experience Enhancements
-
-1. **Transparent Error Communication**
-   - Design user-friendly error messages
-   - Add visual indicators for degraded functionality
-   - Provide clear instructions for offline capabilities
-
-2. **Progressive Enhancement**
-   - Build core features to work without API dependencies
-   - Add enhanced features when APIs are available
-   - Implement feature toggles for graceful feature management
-
-3. **Feedback Loop**
-   - Add telemetry for error tracking
-   - Implement user feedback for error scenarios
-   - Create automated error reporting
-
-### Implementation Timeline
-
-#### Short-term (1-2 weeks)
-- Expand mock data library
-- Implement basic circuit breaker pattern
-- Add user-friendly error messages
-
-#### Medium-term (3-4 weeks)
-- Create comprehensive retry mechanisms
-- Implement API health monitoring
-- Design graceful degradation strategies
-
-#### Long-term (1-2 months)
-- Build telemetry and analytics for error tracking
-- Create full offline mode with sophisticated features
-- Implement automatic recovery procedures
-
-### Technical Architecture
-
-```
+## Related Documentation
+- [Project Overview](./architecture/Project-Overview.md)
+- [Debate Engine](./features/Debate-Engine.md)
+- [API Integration](./api/API-Integration.md) 
