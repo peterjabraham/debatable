@@ -143,7 +143,7 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
     return (
         <div className={cn("space-y-6 p-6 border rounded-lg", className)}>
             <div className="space-y-2">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
+                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                     <BrainCircuit className="h-5 w-5" />
                     Debate Summary
                 </h2>
@@ -183,7 +183,7 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
             {/* Supporting Arguments */}
             {proMessages.length > 0 && (
                 <div className="space-y-2">
-                    <h3 className="text-lg font-medium flex items-center gap-2">
+                    <h3 className="text-lg text-white font-medium flex items-center gap-2">
                         <MessageSquareQuote className="h-4 w-4 text-[hsl(142,76%,36%)]" />
                         Supporting Arguments
                     </h3>
@@ -201,7 +201,7 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
             {/* Opposing Arguments */}
             {conMessages.length > 0 && (
                 <div className="space-y-2">
-                    <h3 className="text-lg font-medium flex items-center gap-2">
+                    <h3 className="text-lg text-white font-medium flex items-center gap-2">
                         <MessageSquareQuote className="h-4 w-4 text-destructive" />
                         Opposing Arguments
                     </h3>

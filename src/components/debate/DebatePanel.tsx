@@ -1296,7 +1296,7 @@ export function DebatePanel() {
 
     // Main render
     return (
-        <div className="flex flex-col h-full max-w-4xl mx-auto">
+        <div className="flex flex-col bg-gray-700 h-full max-w-4xl mx-auto">
             {/* Debug indicator - only shown in development or if debug mode is enabled */}
             {(process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEBUG_MODE === 'true') && (
                 <div className="fixed top-0 right-0 p-2 bg-slate-800 text-white text-xs z-50 opacity-80 rounded-bl">
@@ -1313,7 +1313,7 @@ export function DebatePanel() {
             {/* Show summary if requested */}
             {showSummary && messages.length > 0 && (
                 <div className="mb-8 p-6 bg-black border border-gray-800 rounded-lg">
-                    <h2 className="text-2xl font-bold text-center mb-6">Debate Summary</h2>
+                    <h2 className="text-2xl font-bold text-white text-center mb-6">Debate Summary</h2>
                     <DebateSummary
                         topic={topic}
                         experts={experts}
@@ -1342,7 +1342,7 @@ export function DebatePanel() {
 
             <div className={cn(
                 "flex flex-col flex-1 p-4 md:p-6 rounded-lg",
-                "bg-black border border-gray-800",
+                "bg-gray-700 border border-gray-700",
                 showSummary && "opacity-50"
             )}>
                 {/* Progressive Loading States */}
@@ -1398,38 +1398,38 @@ export function DebatePanel() {
                     </div>
                 )}
 
-                <div className="flex flex-col h-full max-w-4xl mx-auto p-4">
+                <div className="flex flex-col h-full bg-gray-700 max-w-4xl mx-auto p-4">
                     {/* Expert Type Selection */}
                     {!selectedParticipantType && (
                         <div className="space-y-8">
-                            <h2 className="text-2xl font-bold text-center">Choose Your Debate Experts</h2>
-                            <p className="text-center text-gray-400">
+                            <h2 className="text-2xl font-bold text-center text-white">Choose Your Debate Experts</h2>
+                            <p className="text-center font-bold text-white">
                                 Select the type of experts you'd like to debate with
                             </p>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
                                 <button
                                     onClick={() => handleExpertTypeSelect('historical')}
-                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-800 bg-black hover:bg-gray-900 transition-colors"
+                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-600 bg-black hover:bg-gray-900 transition-colors"
                                 >
                                     <div className="w-16 h-16 rounded-full bg-blue-900 flex items-center justify-center mb-4">
                                         <BookOpen className="h-8 w-8 text-blue-300" />
                                     </div>
-                                    <h3 className="text-xl font-semibold mb-2">Historical Figures</h3>
-                                    <p className="text-gray-400 text-center">
+                                    <h3 className="text-xl font-semibold mb-2 text-blue-700">Historical Figures</h3>
+                                    <p className="text-white text-center">
                                         Debate with notable historical thinkers and leaders from different eras
                                     </p>
                                 </button>
 
                                 <button
                                     onClick={() => handleExpertTypeSelect('ai')}
-                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-800 bg-black hover:bg-gray-900 transition-colors"
+                                    className="flex flex-col items-center p-6 rounded-lg border border-gray-600 bg-black hover:bg-gray-900 transition-colors"
                                 >
                                     <div className="w-16 h-16 rounded-full bg-purple-900 flex items-center justify-center mb-4">
                                         <BrainCircuit className="h-8 w-8 text-purple-300" />
                                     </div>
-                                    <h3 className="text-xl font-semibold mb-2">AI Subject Experts</h3>
-                                    <p className="text-gray-400 text-center">
+                                    <h3 className="text-xl font-semibold mb-2 text-purple-700">AI Subject Experts</h3>
+                                    <p className="text-white text-center">
                                         Debate with AI specialists across various fields, each with a unique identifier
                                     </p>
                                 </button>
@@ -1479,8 +1479,8 @@ export function DebatePanel() {
 
                                 {/* Content Analysis Section */}
                                 <div className="card">
-                                    <h2 className="text-xl font-semibold mb-4">Upload Content</h2>
-                                    <p className="text-sm text-muted-foreground mb-4">Upload a document, YouTube video, or podcast to extract debate topics</p>
+                                    <h2 className="text-xl font-semibold mb-4">Or Upload Content / Provide a Link</h2>
+                                    <p className="text-sm text-muted-foreground mb-4">Upload a document, or provide a link to a YouTube video, or podcast to extract debate topics</p>
 
                                     {/* Integrated ContentUploader with all options */}
                                     <ContentUploader />
@@ -1536,8 +1536,8 @@ export function DebatePanel() {
                             )}
 
                             {(!extractedTopics || extractedTopics.length === 0) && !loadingState && (
-                                <div className="text-center text-sm text-gray-400">
-                                    <p>Choose one of the options above to start your debate</p>
+                                <div className="text-center text-sm text-white">
+                                    <p>Choose one of the options above to define the topic for your debate</p>
                                 </div>
                             )}
                         </div>
