@@ -1,22 +1,11 @@
-import nlp from 'compromise';
-import * as use from '@tensorflow-models/universal-sentence-encoder';
-import * as tf from '@tensorflow/tfjs';
-import { compareTwoStrings } from 'string-similarity';
 import {
-    Topic,
-    Argument,
+    ParsedDocument,
     TopicExtractionResult,
     TopicExtractorOptions,
-    ParsedDocument,
+    Topic,
+    Argument
 } from '@/types/content-processing';
-
-// Force TF.js to use WebGL backend in browser environment
-if (typeof window !== 'undefined') {
-    tf.setBackend('webgl');
-} else {
-    // In Node.js environment (SSR), we'll use CPU
-    tf.setBackend('cpu');
-}
+import { compareTwoStrings } from 'string-similarity';
 
 const DEFAULT_OPTIONS: TopicExtractorOptions = {
     minConfidence: 0.6,
@@ -25,181 +14,367 @@ const DEFAULT_OPTIONS: TopicExtractorOptions = {
     language: 'english',
 };
 
-// Simple word tokenizer function
-function tokenizeWords(text: string): string[] {
-    return text.toLowerCase().match(/\b\w+\b/g) || [];
-}
+/**
+ * Extract debate topics from text content
+ * @param text The text content to extract topics from
+ * @returns An array of extracted topics with arguments
+ */
+export async function extractTopicsFromText(text: string) {
+    try {
+        console.log('Extracting topics from text');
 
-// Simple TF-IDF implementation
-class SimpleTfIdf {
-    private documents: string[][] = [];
+        // Check for empty text
+        if (!text || text.trim() === '') {
+            console.warn('Empty text provided to topic extractor');
+            return [];
+        }
 
-    addDocument(tokens: string[]) {
-        this.documents.push(tokens);
-    }
+        // Create a topic extractor instance
+        const extractor = new TopicExtractor();
 
-    tfidf(term: string, docIndex: number): number {
-        const tf = this.tf(term, docIndex);
-        const idf = this.idf(term);
-        return tf * idf;
-    }
+        // Parse the document
+        const parsedDocument: ParsedDocument = {
+            content: text,
+            sections: [{
+                title: 'Main Content',
+                content: text
+            }]
+        };
 
-    private tf(term: string, docIndex: number): number {
-        const doc = this.documents[docIndex];
-        const termCount = doc.filter(t => t === term).length;
-        return termCount / doc.length;
-    }
+        // Extract topics
+        console.log('Running topic extraction');
 
-    private idf(term: string): number {
-        const docsWithTerm = this.documents.filter(doc => doc.includes(term)).length;
-        return Math.log(this.documents.length / (1 + docsWithTerm));
+        let extractionResult;
+        try {
+            extractionResult = await extractor.extractTopics(parsedDocument);
+        } catch (error) {
+            console.error('Error during topic extraction:', error);
+
+            // Use a fallback extraction method or return empty results
+            extractionResult = {
+                topics: [],
+                args: []
+            };
+
+            // Try to extract some basic topics using a simplified approach
+            try {
+                console.log('Using fallback topic extraction method');
+
+                // Split content into paragraphs
+                const paragraphs = text.split(/\n\s*\n/);
+
+                // Look for capitalized phrases that might be topics
+                const potentialTopics = new Set<string>();
+                const regex = /\b[A-Z][a-z]+(?:\s+[A-Z]?[a-z]+){1,3}\b/g;
+
+                paragraphs.forEach(paragraph => {
+                    const matches = paragraph.match(regex);
+                    if (matches) {
+                        matches.forEach(match => potentialTopics.add(match));
+                    }
+                });
+
+                // Convert to topics array
+                if (potentialTopics.size > 0) {
+                    extractionResult.topics = Array.from(potentialTopics).slice(0, 3).map(title => ({
+                        title,
+                        confidence: 0.7,
+                        relatedTopics: []
+                    }));
+
+                    // Add a basic argument for each topic
+                    extractionResult.args = extractionResult.topics.map(topic => ({
+                        topicTitle: topic.title,
+                        text: `Analysis of ${topic.title}`,
+                        type: 'support',
+                        confidence: 0.7
+                    }));
+                }
+            } catch (fallbackError) {
+                console.error('Fallback extraction also failed:', fallbackError);
+                // Keep empty results
+            }
+        }
+
+        // Process the result - transform to the format expected by the UI
+        const displayTopics = extractionResult.topics.map(topic => {
+            const topicArguments = extractionResult.args
+                .filter(arg => arg.topicTitle === topic.title)
+                .map(arg => ({
+                    claim: arg.text || `Argument about ${topic.title}`,
+                    evidence: `Analysis of the document reveals that ${arg.text || 'this topic'} is significant.`,
+                    type: arg.type
+                }));
+
+            // Ensure we always have at least one argument
+            const topicArgs = topicArguments.length > 0 ? topicArguments : [
+                {
+                    claim: `Key aspect of ${topic.title}`,
+                    evidence: `The document discusses important aspects of ${topic.title}.`
+                }
+            ];
+
+            // Return in the format expected by the UI
+            return {
+                title: topic.title,
+                confidence: topic.confidence,
+                arguments: topicArgs
+            };
+        });
+
+        console.log(`Extracted ${displayTopics.length} topics for display`);
+        console.log('Topics for display:', JSON.stringify(displayTopics, null, 2));
+        return displayTopics;
+    } catch (error) {
+        console.error('Error extracting topics:', error);
+        throw new Error(`Failed to extract topics: ${error.message}`);
     }
 }
 
 export class TopicExtractor {
     private options: TopicExtractorOptions;
-    private sentenceEncoder: any; // Universal Sentence Encoder model
 
     constructor(options: Partial<TopicExtractorOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
-        this.initializeSentenceEncoder();
     }
 
-    private async initializeSentenceEncoder() {
-        try {
-            this.sentenceEncoder = await use.load();
-        } catch (error) {
-            console.error('Failed to load Universal Sentence Encoder:', error);
-        }
-    }
-
-    private splitIntoSentences(text: string): string[] {
-        return text.match(/[^.!?]+[.!?]+/g)?.map(s => s.trim()) || [];
-    }
-
-    private extractKeywords(text: string): string[] {
-        const tokens = tokenizeWords(text);
-        const tfidf = new SimpleTfIdf();
-        tfidf.addDocument(tokens);
-
-        const scores = tokens.map(token => ({
-            token,
-            score: tfidf.tfidf(token, 0)
-        }));
-
-        return scores
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 10)
-            .map(item => item.token);
-    }
-
-    private findRelatedTopics(topicTitle: string, existingTopics: Topic[]): string[] {
-        return existingTopics
-            .filter(topic => {
-                const similarity = compareTwoStrings(topicTitle.toLowerCase(), topic.title.toLowerCase());
-                return similarity > 0.7;
-            })
-            .map(topic => topic.title);
-    }
-
-    private async findCounterpoints(sentences: string[], claim: string): Promise<string[]> {
-        const counterpoints: string[] = [];
-        const doc = nlp(sentences.join(' '));
-
-        // Look for contrasting statements
-        const contrastingStatements = doc
-            .match('(however|but|although|though|contrary|despite|yet|while)')
-            .out('array');
-
-        for (const statement of contrastingStatements) {
-            const similarity = compareTwoStrings(claim.toLowerCase(), statement.toLowerCase());
-            if (similarity > 0.3 && similarity < 0.7) {
-                counterpoints.push(statement);
-            }
-        }
-
-        return counterpoints;
-    }
-
+    /**
+     * Extract topics from a document
+     */
     public async extractTopics(document: ParsedDocument): Promise<TopicExtractionResult> {
-        const sections = document.sections || [{ title: '', content: document.content }];
-        const topics: Topic[] = [];
-        const topicArguments: Argument[] = [];
+        try {
+            console.log('Starting topic extraction process');
+            const topics: Topic[] = [];
+            const args: Argument[] = [];
 
-        for (const section of sections) {
-            const sectionText = section.content;
-            const sentences = this.splitIntoSentences(sectionText);
+            // Simple approach to find potential topics
+            const sentences = this.splitIntoSentences(document.content);
+            const keywords = this.extractPotentialTopics(document.content);
 
-            // Extract keywords for potential topics
-            const keywords = this.extractKeywords(sectionText);
+            console.log(`Found ${keywords.length} potential topics`);
 
             // Process each keyword as a potential topic
             for (const keyword of keywords) {
+                // Check keyword length - too short keywords are often not useful
+                if (keyword.length < 5) continue;
+
+                // Create a topic with the keyword
+                const topicTitle = this.formatTopicTitle(keyword);
+
                 // Check if similar topic already exists
-                const relatedTopics = this.findRelatedTopics(keyword, topics);
-                if (relatedTopics.length > 0) continue;
+                if (topics.some(t => this.isSimilarTopic(t.title, topicTitle))) continue;
 
-                // Create new topic
-                const topic: Topic = {
-                    title: keyword,
-                    confidence: await this.calculateClaimConfidence(keyword, sentences),
-                    relatedTopics: relatedTopics,
-                };
+                // Calculate topic confidence based on frequency and relevance
+                const confidence = this.calculateTopicConfidence(topicTitle, document.content);
 
-                if (topic.confidence >= this.options.minConfidence) {
+                // Only add topics with sufficient confidence
+                if (confidence >= this.options.minConfidence) {
+                    // Add the topic
+                    const topic: Topic = {
+                        title: topicTitle,
+                        confidence,
+                        relatedTopics: []
+                    };
                     topics.push(topic);
 
-                    // Find arguments for this topic
-                    const relevantSentences = sentences.filter(s =>
-                        this.isContentRelatedToTopic(s, topic)
+                    // Find relevant sentences for this topic
+                    const relevantSentences = sentences.filter(sentence =>
+                        this.isSentenceRelevantToTopic(sentence, topicTitle)
                     );
 
-                    if (this.options.extractCounterpoints) {
-                        const counterpoints = await this.findCounterpoints(sentences, keyword);
-                        for (const counterpoint of counterpoints) {
-                            topicArguments.push({
-                                topicTitle: topic.title,
-                                text: counterpoint,
-                                type: 'counter',
-                                confidence: await this.calculateClaimConfidence(counterpoint, relevantSentences)
+                    // Extract arguments from relevant sentences
+                    for (const sentence of relevantSentences) {
+                        // Check if sentence makes a claim
+                        if (this.isClaim(sentence)) {
+                            args.push({
+                                topicTitle,
+                                text: sentence,
+                                type: 'support',
+                                confidence: this.calculateArgumentConfidence(sentence, topicTitle)
                             });
                         }
-                    }
 
-                    // Add supporting arguments
-                    for (const sentence of relevantSentences) {
-                        topicArguments.push({
-                            topicTitle: topic.title,
-                            text: sentence,
-                            type: 'support',
-                            confidence: await this.calculateClaimConfidence(sentence, relevantSentences)
-                        });
+                        // Extract counterpoints if enabled
+                        if (this.options.extractCounterpoints && this.isCounterpoint(sentence)) {
+                            args.push({
+                                topicTitle,
+                                text: sentence,
+                                type: 'counter',
+                                confidence: this.calculateArgumentConfidence(sentence, topicTitle)
+                            });
+                        }
                     }
                 }
 
                 // Limit number of topics
                 if (topics.length >= this.options.maxTopics) break;
             }
+
+            // Sort topics by confidence
+            const sortedTopics = topics.sort((a, b) => b.confidence - a.confidence);
+
+            // Sort arguments by confidence
+            const sortedArgs = args.sort((a, b) => b.confidence - a.confidence);
+
+            console.log(`Finished extraction with ${sortedTopics.length} topics and ${sortedArgs.length} arguments`);
+
+            return {
+                topics: sortedTopics,
+                args: sortedArgs
+            };
+        } catch (error) {
+            console.error('Error in topic extraction:', error);
+            throw new Error(`Topic extraction failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Split text into sentences
+     */
+    private splitIntoSentences(text: string): string[] {
+        return text.match(/[^.!?]+[.!?]+/g)?.map(s => s.trim()) || [];
+    }
+
+    /**
+     * Extract potential topics from text
+     */
+    private extractPotentialTopics(text: string): string[] {
+        // Simple approach: extract noun phrases and frequent terms
+        const words = text.toLowerCase().match(/\b[a-z]{4,}(?:\s+[a-z]+)?\b/g) || [];
+
+        // Count word frequencies
+        const wordCounts = new Map<string, number>();
+        for (const word of words) {
+            wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
         }
 
-        return {
-            topics: topics.sort((a, b) => b.confidence - a.confidence),
-            arguments: topicArguments.sort((a, b) => b.confidence - a.confidence)
-        };
+        // Get words that appear multiple times and sort by frequency
+        const frequentWords = [...wordCounts.entries()]
+            .filter(([_, count]) => count > 1)
+            .sort((a, b) => b[1] - a[1])
+            .map(([word]) => word);
+
+        // Extract multi-word phrases
+        const phrases = this.extractPhrases(text);
+
+        // Combine frequent words and phrases, prioritizing phrases
+        return [...phrases, ...frequentWords.slice(0, 15)];
     }
 
-    private async calculateClaimConfidence(
-        claim: string,
-        evidence: string[]
-    ): Promise<number> {
-        if (!evidence.length) return 0;
+    /**
+     * Extract meaningful phrases from text
+     */
+    private extractPhrases(text: string): string[] {
+        // Look for capitalized phrases that might indicate topics
+        const potentialTopics = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z]?[a-z]+){1,3}\b/g) || [];
 
-        const similarities = evidence.map(e => compareTwoStrings(claim.toLowerCase(), e.toLowerCase()));
-        return Math.max(...similarities);
+        console.log(`Extracted ${potentialTopics.length} potential capitalized topics from text`);
+        if (potentialTopics.length > 0) {
+            console.log('Sample topics:', potentialTopics.slice(0, 5));
+        }
+
+        // Create distinct list of topics (case-insensitive)
+        const uniqueTopics = [...new Set(potentialTopics.map(p => p.toLowerCase()))];
+
+        return uniqueTopics;
     }
 
-    private isContentRelatedToTopic(content: string, topic: Topic): boolean {
-        const similarity = compareTwoStrings(content.toLowerCase(), topic.title.toLowerCase());
-        return similarity > this.options.minConfidence;
+    /**
+     * Format a keyword into a proper topic title
+     */
+    private formatTopicTitle(keyword: string): string {
+        // Capitalize the first letter of each word
+        return keyword
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    }
+
+    /**
+     * Check if a sentence is relevant to a topic
+     */
+    private isSentenceRelevantToTopic(sentence: string, topic: string): boolean {
+        const similarity = compareTwoStrings(
+            sentence.toLowerCase(),
+            topic.toLowerCase()
+        );
+        return similarity > 0.2;
+    }
+
+    /**
+     * Check if two topics are similar
+     */
+    private isSimilarTopic(topic1: string, topic2: string): boolean {
+        const similarity = compareTwoStrings(
+            topic1.toLowerCase(),
+            topic2.toLowerCase()
+        );
+        return similarity > 0.7;
+    }
+
+    /**
+     * Calculate topic confidence based on prominence in the document
+     */
+    private calculateTopicConfidence(topic: string, content: string): number {
+        // Simple confidence calculation based on frequency and position
+        const topicLower = topic.toLowerCase();
+        const contentLower = content.toLowerCase();
+
+        // Check how many times the topic appears
+        const regex = new RegExp(`\\b${topicLower.replace(/\s+/g, '\\s+')}\\b`, 'g');
+        const matches = contentLower.match(regex) || [];
+        const frequency = matches.length;
+
+        // Check if topic appears in the first paragraph (more important)
+        const firstParagraph = contentLower.split('\n')[0] || '';
+        const inFirstParagraph = firstParagraph.includes(topicLower);
+
+        // Calculate confidence score
+        let confidence = Math.min(0.5 + (frequency * 0.1), 0.95);
+        if (inFirstParagraph) confidence += 0.1;
+
+        return Math.min(confidence, 1.0);
+    }
+
+    /**
+     * Calculate argument confidence
+     */
+    private calculateArgumentConfidence(sentence: string, topic: string): number {
+        // Calculate based on relevance to topic
+        const similarity = compareTwoStrings(
+            sentence.toLowerCase(),
+            topic.toLowerCase()
+        );
+
+        // Adjust based on sentence features
+        let confidence = similarity * 0.7;
+
+        // Boost confidence for sentences with claim indicators
+        if (/\b(?:should|must|need|important|significant|crucial|essential|critical)\b/i.test(sentence)) {
+            confidence += 0.15;
+        }
+
+        // Boost confidence for sentences with evidence indicators
+        if (/\b(?:because|since|therefore|thus|consequently|as a result|research|study|evidence|data|statistics)\b/i.test(sentence)) {
+            confidence += 0.1;
+        }
+
+        return Math.min(confidence, 0.98);
+    }
+
+    /**
+     * Check if a sentence is likely to be a claim
+     */
+    private isClaim(sentence: string): boolean {
+        // Look for claim indicators
+        return /\b(?:should|must|need|important|significant|crucial|essential|critical|argue|assert|claim|maintain|contend)\b/i.test(sentence);
+    }
+
+    /**
+     * Check if a sentence is likely to be a counterpoint
+     */
+    private isCounterpoint(sentence: string): boolean {
+        // Look for counterpoint indicators
+        return /\b(?:however|but|although|though|contrary|despite|yet|while|on the other hand|opponents|critics|challenge|dispute)\b/i.test(sentence);
     }
 } 

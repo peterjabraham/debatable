@@ -64,6 +64,7 @@ export function ContentUploader() {
     const handleProcessContent = async () => {
         setIsProcessing(true);
         setError(null);
+        // Reset extracted topics to ensure we don't show old data
         setExtractedTopics([]);
 
         console.log(`[ContentUploader] Starting content processing for tab: ${activeTab}`);
@@ -148,15 +149,44 @@ export function ContentUploader() {
 
             if (!response.ok) {
                 console.error(`[ContentUploader] API responded with error status: ${response.status}`);
-                const errorData = await response.json();
-                console.error(`[ContentUploader] Error details:`, errorData);
-                throw new Error(errorData.message || errorData.error || 'Failed to process content');
+                let errorMessage = `Server error (${response.status})`;
+
+                try {
+                    // Try to get the error message from the response, but handle empty responses
+                    const responseText = await response.text();
+                    console.log(`[ContentUploader] Error response text:`, responseText);
+
+                    // Only try to parse if we have actual content
+                    if (responseText && responseText.trim().length > 0) {
+                        const errorData = JSON.parse(responseText);
+                        errorMessage = errorData.message || errorData.error || errorMessage;
+                    } else {
+                        errorMessage = "Server returned an empty response";
+                    }
+                } catch (parseError) {
+                    console.error(`[ContentUploader] Could not parse error response:`, parseError);
+                    errorMessage = `Server error: ${response.statusText || response.status}`;
+                }
+
+                console.error(`[ContentUploader] Error details:`, errorMessage);
+                throw new Error(errorMessage);
             }
 
             console.log(`[ContentUploader] Received successful response from API`);
             // Get response body as text first for debugging
-            const responseText = await response.text();
-            console.log(`[ContentUploader] Raw response:`, responseText);
+            let responseText;
+            try {
+                responseText = await response.text();
+                console.log(`[ContentUploader] Raw response:`, responseText);
+
+                // Check if the response is empty
+                if (!responseText || responseText.trim().length === 0) {
+                    throw new Error("Server returned an empty response");
+                }
+            } catch (textError) {
+                console.error(`[ContentUploader] Error reading response text:`, textError);
+                throw new Error(`Failed to read server response: ${textError.message}`);
+            }
 
             // Parse the response text into JSON
             let data;
@@ -180,10 +210,16 @@ export function ContentUploader() {
             // Check if data is valid and has topics
             if (data && data.topics && Array.isArray(data.topics) && data.topics.length > 0) {
                 console.log(`[ContentUploader] Extracted ${data.topics.length} topics from content`);
+                console.log(`[ContentUploader] Response is from mock API: ${!!data.mock}`);
 
                 // Log first topic for debugging
                 if (data.topics.length > 0) {
                     console.log(`[ContentUploader] First topic:`, data.topics[0]);
+
+                    // Log further details about the topic to help diagnose the issue
+                    console.log(`[ContentUploader] Topic title: "${data.topics[0].title}"`);
+                    console.log(`[ContentUploader] Topic confidence: ${data.topics[0].confidence}`);
+                    console.log(`[ContentUploader] Number of arguments: ${data.topics[0].arguments?.length || 0}`);
 
                     // Check for both 'arguments' and 'args' properties to handle backend format variations
                     const hasArguments = !!data.topics[0].arguments;
@@ -270,11 +306,23 @@ export function ContentUploader() {
             console.error(`[ContentUploader] Error processing content:`, err);
             setError(errorMessage);
 
+            // Create a more user-friendly error message for the notification
+            let notificationMessage = errorMessage;
+            if (errorMessage.includes('corrupted') || errorMessage.includes('invalid')) {
+                notificationMessage = 'The document appears to be corrupted or invalid';
+            } else if (errorMessage.includes('empty')) {
+                notificationMessage = 'Document contains no extractable text';
+            } else if (errorMessage.includes('timed out')) {
+                notificationMessage = 'Processing timed out - file may be too large';
+            } else if (errorMessage.includes('Server')) {
+                notificationMessage = 'Server error - please try again later';
+            }
+
             // Update notification to error
             updateNotification(id, {
                 status: 'error',
                 title: 'Processing Failed',
-                message: errorMessage,
+                message: notificationMessage,
                 duration: 5000, // Auto-dismiss after 5 seconds
             });
         } finally {
@@ -550,7 +598,19 @@ export function ContentUploader() {
                     <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-md text-sm">
                         <p className="font-medium mb-1">Error</p>
                         <p>{error}</p>
-                        <p className="mt-2 text-xs">Please try again with different content or check your connection.</p>
+                        <p className="mt-2 text-xs">
+                            {error.includes('corrupted') || error.includes('invalid') ? (
+                                <>Your PDF file might be corrupted. Try opening it first to verify it works, then re-upload.</>
+                            ) : error.includes('empty') ? (
+                                <>The document appears to be empty or contains no extractable text. Try a different document.</>
+                            ) : error.includes('timed out') ? (
+                                <>The file is too large or complex to process. Try a simpler or smaller document.</>
+                            ) : error.includes('Server') ? (
+                                <>There appears to be a server issue. Please try again later or contact support.</>
+                            ) : (
+                                <>Please try again with different content or check your connection.</>
+                            )}
+                        </p>
                     </div>
                 )}
 
