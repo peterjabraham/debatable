@@ -533,24 +533,41 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 setExpertsLoading(true);
 
                 try {
-                    // Always try to select experts via API first
+                    // Always try to select experts via API first with timeout
                     console.log("Calling selectExperts to generate experts");
-                    await selectExperts();
+                    const expertPromise = selectExperts();
 
-                    // If we still don't have experts after API call, use fallbacks only in development
-                    if (experts.length === 0 && process.env.NODE_ENV !== 'production') {
-                        console.log("API failed to load experts, using fallbacks in development mode");
-                        const currentExpertType = expertType || selectedParticipantType || 'ai';
-                        const filteredMockExperts = mockExperts
-                            .filter((expert: Expert) => expert.type === currentExpertType)
-                            .slice(0, 2);
+                    // Add a timeout to prevent infinite loading
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('Expert generation timed out')), 20000); // 20-second timeout
+                    });
 
-                        setExperts(filteredMockExperts);
-                        setExpertsSelected(true);
-                        showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+                    await Promise.race([expertPromise, timeoutPromise]);
+
+                    // Double-check that experts were loaded after API call completed
+                    if (experts.length === 0) {
+                        console.log("API call completed but no experts were loaded");
+
+                        // Only use fallbacks in development mode
+                        if (process.env.NODE_ENV !== 'production') {
+                            console.log("Using fallback experts in development mode");
+                            const currentExpertType = expertType || selectedParticipantType || 'ai';
+                            const filteredMockExperts = mockExperts
+                                .filter((expert: Expert) => expert.type === currentExpertType)
+                                .slice(0, 2);
+
+                            setExperts(filteredMockExperts);
+                            setExpertsSelected(true);
+                            showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+                        } else {
+                            // In production mode, show a clear error
+                            console.warn("Failed to generate experts in production mode");
+                            showWarning('Expert Generation Failed', 'Please try again or try a different topic');
+                        }
                     }
                 } catch (expertError) {
                     console.error("Error generating experts:", expertError);
+
                     // Only use fallbacks in development mode
                     if (process.env.NODE_ENV !== 'production') {
                         const currentExpertType = expertType || selectedParticipantType || 'ai';
@@ -566,6 +583,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                         showWarning('Expert Generation Failed', 'Please try again with a different topic');
                     }
                 } finally {
+                    // Ensure loading state is always cleared
                     setExpertsLoading(false);
                 }
             }
@@ -574,6 +592,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
         } catch (error) {
             console.error('Error initializing debate:', error);
+            // Always clear loading states
+            setExpertsLoading(false);
+
             const appError = createError(
                 'DEBATE_INITIALIZATION_ERROR',
                 'Failed to initialize debate',
@@ -1762,6 +1783,22 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                             <>
                                                 <p className="text-white text-center">Generating expert profiles based on your topic...</p>
                                                 <p className="text-sm text-muted-foreground mt-2">This may take a moment as we create tailored debate experts.</p>
+                                                {/* Add retry button in production after 15 seconds */}
+                                                <div id="expert-retry-button" className="mt-6 opacity-0" style={{ animation: 'fadeIn 0.5s ease-in forwards 15s' }}>
+                                                    <Button
+                                                        onClick={() => {
+                                                            setExpertsLoading(false);
+                                                            selectExperts();
+                                                        }}
+                                                        variant="outline"
+                                                        size="sm"
+                                                    >
+                                                        Retry Expert Generation
+                                                    </Button>
+                                                    <p className="text-xs text-muted-foreground mt-2">
+                                                        Having trouble? Try manually refreshing the page or entering a different topic.
+                                                    </p>
+                                                </div>
                                             </>
                                         ) : (
                                             <>
@@ -1771,7 +1808,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                         )}
                                     </div>
 
-                                    {/* Fallback experts in development mode only - with delayed fade-in */}
+                                    {/* Fallback experts in development mode only */}
                                     {process.env.NODE_ENV !== 'production' && (
                                         <div className="mt-8 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s ease-in forwards 4s' }}>
                                             <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
