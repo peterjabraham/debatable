@@ -3,4 +3,4 @@
  */
 
 export * from './SessionProvider';
-export * from './LogoutButton'; 
+export * from './LogoutButton';
