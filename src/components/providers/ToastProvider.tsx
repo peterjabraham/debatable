@@ -45,7 +45,8 @@ function ToastList() {
     );
 }
 
-export function ToastProvider({ children }: { children: React.ReactNode }) {
+// Renamed to avoid conflicts with UI module
+export function AppToastProvider({ children }: { children: React.ReactNode }) {
     return (
         <RadixToastProvider>
             {children}

@@ -22,9 +22,9 @@ export * from './toast';
 export * from './toaster';
 export * from './notification';
 
-// Named exports for components that might have default exports
-export { default as AccountDetails } from './AccountDetails';
-export { default as ProfilePicture } from './ProfilePicture';
-export { default as PreferenceSettings } from './PreferenceSettings';
-export { default as PerplexityStatus } from './PerplexityStatus';
-export { default as PerplexityLoader } from './PerplexityLoader'; 
+// Named exports for components that use named exports
+export { AccountDetails } from './AccountDetails';
+export { ProfilePicture } from './ProfilePicture';
+export { PreferenceSettings } from './PreferenceSettings';
+export { PerplexityStatus } from './PerplexityStatus';
+export { PerplexityLoader } from './PerplexityLoader'; 

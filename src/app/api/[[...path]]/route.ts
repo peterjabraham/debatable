@@ -4,14 +4,19 @@ import { NextRequest, NextResponse } from 'next/server';
 function shouldMockRequest(url: URL): boolean {
     const path = url.pathname;
 
+    console.log(`[Catch-all API] Checking if request should be mocked: ${path}`);
+
     // Skip paths we've already handled with dedicated handlers
     if (path.startsWith('/api/voice') ||
         path.startsWith('/api/auth/session') ||
         path.startsWith('/api/auth/_log') ||
-        path.startsWith('/api/debate')) {
+        path.startsWith('/api/debate') ||
+        path.startsWith('/api/content/')) { // Explicitly skip content processing endpoints
+        console.log(`[Catch-all API] Skipping mock for dedicated endpoint: ${path}`);
         return false;
     }
 
+    console.log(`[Catch-all API] Using mock for path: ${path}`);
     return true;
 }
 

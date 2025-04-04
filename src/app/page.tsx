@@ -1,62 +1,32 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Mic, MessageSquare, Brain, BookOpen, Users, Lightbulb, RefreshCw, FileText } from 'lucide-react';
-import { UserNavigation } from '@/components/UserNavigation';
+import { AppHeader } from '@/components/AppHeader';
 
 export default function Home() {
   return (
     <main className="flex min-h-screen flex-col overflow-auto bg-gray-700">
-      {/* Navigation */}
-      <header className="bg-black border-b border-gray-800 p-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-white">Debate-able</h1>
-        <div className="flex items-center gap-4">
-          <nav className="hidden md:flex space-x-6">
-            <Link href="#features" className="text-xs font-medium text-gray-300 hover:text-primary transition-colors">Features</Link>
-            <Link href="#how-it-works" className="text-xs font-medium text-gray-300 hover:text-primary transition-colors">How it Works</Link>
-            <Link href="#use-cases" className="text-xs font-medium text-gray-300 hover:text-primary transition-colors">Use Cases</Link>
-            <Link href="#start-debating" className="text-xs font-medium text-gray-300 hover:text-primary transition-colors">Get Started</Link>
-          </nav>
-          <UserNavigation />
-        </div>
-      </header>
+      <AppHeader currentPage="home" />
 
       {/* Hero Section */}
-      <section className="py-16 px-4 md:px-8 lg:py-24 flex flex-col items-center text-center bg-gray-900 text-white">
-        <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-6 max-w-3xl">
-          Engage in AI-powered debates with historical experts
-        </h2>
-        <p className="text-lg text-gray-300 mb-8 max-w-2xl">
-          Transform your ideas into dynamic intellectual battles. Debate with AI-generated experts who bring historical context and specialized knowledge to any topic.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-4">
-          <Button size="lg" className="bg-green-500 hover:bg-green-600 text-white px-8">
-            <Link href="/app/debate">Start Debating</Link>
-          </Button>
-          <Button size="lg" className="bg-red-600 hover:bg-red-700 text-white px-8">
-            <Link href="#watch-demo">Watch Demo</Link>
-          </Button>
-        </div>
-
-        <div className="mt-12 relative w-full max-w-4xl rounded-lg overflow-hidden shadow-xl border border-gray-800 bg-gray-800">
-          <div className="aspect-video bg-gray-800 flex items-center justify-center">
-            <div className="text-3xl font-bold text-gray-500 opacity-50">
-              Debate-able Demo
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-8 mt-12 max-w-2xl w-full">
-          <div className="flex flex-col items-center">
-            <p className="text-2xl font-bold">30+</p>
-            <p className="text-xs text-gray-400">Expert Personalities</p>
-          </div>
-          <div className="flex flex-col items-center">
-            <p className="text-2xl font-bold">3x</p>
-            <p className="text-xs text-gray-400">Critical Thinking Boost</p>
-          </div>
-          <div className="flex flex-col items-center">
-            <p className="text-2xl font-bold">98%</p>
-            <p className="text-xs text-gray-400">Intellectual Satisfaction</p>
+      <section className="py-16 md:py-24 px-4 text-center bg-black">
+        <div className="max-w-5xl mx-auto">
+          <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-white mb-6">
+            Debate with AI Experts</h1>
+          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-10 text-gray-300">
+            Upload content or specify a topic to create a debate between AI experts with opposing perspectives.
+          </p>
+          <div className="flex gap-4 justify-center">
+            <Link href="/app/debate">
+              <Button size="lg" className="rounded-full px-8">
+                Start Debating
+              </Button>
+            </Link>
+            <Link href="#features">
+              <Button variant="outline" size="lg" className="rounded-full px-8">
+                Learn More
+              </Button>
+            </Link>
           </div>
         </div>
       </section>

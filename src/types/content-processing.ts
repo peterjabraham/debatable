@@ -10,14 +10,10 @@ export interface DocumentMetadata {
 }
 
 export interface ParsedDocument {
-    metadata: DocumentMetadata;
+    metadata?: DocumentMetadata;
     content: string;
-    rawText: string;
-    sections?: {
-        title?: string;
-        content: string;
-        pageNumber?: number;
-    }[];
+    rawText?: string;
+    sections?: DocumentSection[];
     error?: string;
 }
 
@@ -36,8 +32,8 @@ export interface DocumentParserResult {
 export interface Topic {
     title: string;
     confidence: number;
-    keywords: string[];
-    summary: string;
+    keywords?: string[];
+    summary?: string;
     relatedTopics?: string[];
     sourceSection?: {
         content: string;
@@ -46,9 +42,12 @@ export interface Topic {
 }
 
 export interface Argument {
-    claim: string;
+    topicTitle: string;
+    text?: string;
+    claim?: string;
     confidence: number;
-    evidence: string[];
+    evidence?: string[];
+    type: 'support' | 'counter';
     counterpoints?: string[];
     sourceSection?: {
         content: string;
@@ -57,16 +56,39 @@ export interface Argument {
 }
 
 export interface TopicExtractionResult {
-    success: boolean;
+    success?: boolean;
     topics: Topic[];
-    mainArguments: Argument[];
+    args: Argument[];
+    mainArguments?: Argument[];
     error?: string;
 }
 
+/**
+ * Topic extraction options
+ */
 export interface TopicExtractorOptions {
+    /**
+     * Minimum confidence for a topic to be considered valid
+     * @default 0.6
+     */
     minConfidence: number;
+
+    /**
+     * Maximum number of topics to extract
+     * @default 5
+     */
     maxTopics: number;
+
+    /**
+     * Whether to extract counterpoints for topics
+     * @default true
+     */
     extractCounterpoints: boolean;
+
+    /**
+     * Language of the document
+     * @default 'english'
+     */
     language: string;
 }
 
@@ -111,4 +133,64 @@ export interface MediaProcessorOptions {
     generateTranscript: boolean;
     maxDuration: number;
     language: string;
+}
+
+/**
+ * A section in a parsed document
+ */
+export interface DocumentSection {
+    /**
+     * Title of the section
+     */
+    title?: string;
+
+    /**
+     * Content of the section
+     */
+    content: string;
+
+    /**
+     * Page number for the section
+     */
+    pageNumber?: number;
+}
+
+/**
+ * The topic as displayed to the user
+ */
+export interface DisplayTopic {
+    /**
+     * Title of the topic
+     */
+    title: string;
+
+    /**
+     * Confidence score (0-1)
+     */
+    confidence: number;
+
+    /**
+     * Arguments for the topic
+     */
+    arguments: {
+        /**
+         * The claim being made
+         */
+        claim: string;
+
+        /**
+         * Evidence supporting the claim
+         */
+        evidence: string;
+
+        /**
+         * Type of argument
+         */
+        type?: string;
+
+        /**
+         * Counterpoints to the claim, if any
+         */
+        counterpoints?: string[];
+    }[];
 } 

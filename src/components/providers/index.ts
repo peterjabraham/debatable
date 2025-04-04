@@ -2,4 +2,4 @@
  * Provider Component exports
  */
 
-export { default as ToastProvider } from './ToastProvider'; 
+export { AppToastProvider } from './ToastProvider'; 

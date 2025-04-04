@@ -158,7 +158,7 @@ const mockExperts: Expert[] = [
     } as Expert
 ];
 
-export function DebatePanel() {
+export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
     const {
         topic,
         experts,
@@ -177,7 +177,8 @@ export function DebatePanel() {
         setExpertType,
         initializeDebate,
         setError,
-        reset
+        reset,
+        setMessages
     } = useDebateStore();
 
     // Initialize error handling and toast hooks
@@ -1293,6 +1294,50 @@ export function DebatePanel() {
             checkApiStatus();
         }
     }, []);
+
+    // Add effect to load existing debate data if provided
+    useEffect(() => {
+        if (existingDebate) {
+            // Initialize debate with existing data
+            console.log('Loading existing debate:', existingDebate);
+
+            // Set the debate ID
+            const debateIdToUse = existingDebate.id || uuidv4();
+
+            // Initialize the debate with existing topic
+            initializeDebate(debateIdToUse, existingDebate.topic);
+
+            // Set the experts
+            if (existingDebate.experts && existingDebate.experts.length > 0) {
+                setExperts(existingDebate.experts);
+                setExpertsSelected(true);
+            }
+
+            // Set the expert type
+            if (existingDebate.expertType) {
+                setExpertType(existingDebate.expertType);
+                setSelectedParticipantType(existingDebate.expertType);
+            }
+
+            // Set the messages if available
+            if (existingDebate.messages && existingDebate.messages.length > 0) {
+                setMessages(existingDebate.messages);
+            }
+
+            // Set the selected topic for UI
+            setSelectedTopic(typeof existingDebate.topic === 'string' ? existingDebate.topic : JSON.parse(existingDebate.topic).title);
+
+            // Close the content analyzer as we're continuing an existing debate
+            setIsContentAnalyzerOpen(false);
+
+            // Set success states
+            updateStepState('topicInitialization', 'success', 'Debate loaded!');
+            updateStepState('expertSelection', 'success');
+            updateStepState('expertLoading', 'success', 'Experts loaded successfully!');
+
+            showSuccess('Debate Loaded', 'You can continue where you left off');
+        }
+    }, [existingDebate]);
 
     // Main render
     return (

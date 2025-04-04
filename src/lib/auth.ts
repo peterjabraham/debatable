@@ -65,7 +65,14 @@ export const authOptions: NextAuthOptions = {
                 // Safe default session if none provided
                 if (!session) {
                     console.warn("Session callback received null session");
-                    return { user: {} };
+                    return {
+                        user: {
+                            id: 'anonymous',
+                            name: 'Anonymous User',
+                            email: 'anonymous@example.com'
+                        },
+                        expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
+                    };
                 }
 
                 // Ensure session.user exists
@@ -86,11 +93,23 @@ export const authOptions: NextAuthOptions = {
                 session.user.email = session.user.email || 'anonymous@example.com';
                 session.user.id = session.user.id || 'anonymous';
 
+                // Ensure session expires is set to avoid client-side errors
+                if (!session.expires) {
+                    session.expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+                }
+
                 return session;
             } catch (error) {
                 console.error("Error in session callback:", error);
                 // Return a minimal valid session object to prevent crashes
-                return { user: { id: 'error', name: 'Error User', email: 'error@example.com' } };
+                return {
+                    user: {
+                        id: 'error',
+                        name: 'Error User',
+                        email: 'error@example.com'
+                    },
+                    expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+                };
             }
         },
         async jwt({ token, user, account, profile }) {

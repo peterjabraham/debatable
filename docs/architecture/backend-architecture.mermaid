@@ -1,0 +1,131 @@
+flowchart TB
+    subgraph Client
+        UI["React Frontend"]
+        UIComponents["UI Components"]
+        VoiceControls["Voice Controls"]
+        ThemeProvider["Theme Provider"]
+        ErrorBoundary["Error Boundaries"]
+        ClientHooks["React Hooks"]
+    end
+    
+    subgraph Server
+        API["Next.js API Routes"]
+        
+        subgraph ContentProcessing
+            DocParser["Document Parser"]
+            LinkProcessor["Link Processor"]
+            MediaProcessor["Media Processor"]
+            TopicExtractor["Topic Extractor"]
+        end
+        
+        subgraph AIEngine
+            ExpertGenerator["Expert Generator"]
+            ResponseGenerator["Expert Response Generator"]
+            DebateManager["Debate Manager"]
+            ContextManager["Context Manager"]
+            Summarizer["Debate Summarizer"]
+        end
+        
+        subgraph DataStorage
+            FirebaseAdmin["Firebase Admin SDK"]
+            Collections["Firestore Collections"]
+            ClientLibs["Client Libraries"]
+            MockImplementations["Mock Implementations"]
+        end
+
+        subgraph ServerMiddleware
+            Auth["Next Auth"]
+            RateLimiting["Rate Limiting"]
+            ErrorHandling["Error Handling"]
+            Caching["Response Caching"]
+        end
+    end
+    
+    subgraph ExternalServices
+        OpenAIAPI["OpenAI API"]
+        PerplexityAPI["Perplexity API"]
+        FirebaseServices["Firebase Services"]
+        ElevenLabsAPI["ElevenLabs API"]
+    end
+    
+    %% Client connections
+    UI --> UIComponents
+    UIComponents --> ClientHooks
+    UIComponents --> VoiceControls
+    UI --> ErrorBoundary
+    UI --> ThemeProvider
+    ClientHooks --> API
+    
+    %% API Routes to processing modules
+    API --> DocParser
+    API --> LinkProcessor
+    API --> MediaProcessor
+    API --> TopicExtractor
+    
+    %% Content processing flow
+    DocParser --> TopicExtractor
+    LinkProcessor --> TopicExtractor
+    MediaProcessor --> TopicExtractor
+    
+    %% AI Engine connections
+    TopicExtractor --> ExpertGenerator
+    API --> ExpertGenerator
+    API --> ResponseGenerator
+    API --> DebateManager
+    ContextManager --> ResponseGenerator
+    DebateManager --> ResponseGenerator
+    API --> Summarizer
+    
+    %% Data storage connections
+    API --> FirebaseAdmin
+    FirebaseAdmin --> Collections
+    UI --> ClientLibs
+    ClientLibs --> FirebaseServices
+    MockImplementations --> API
+    
+    %% Server middleware
+    Auth --> API
+    RateLimiting --> API
+    ErrorHandling --> API
+    Caching --> API
+    
+    %% External service connections
+    ExpertGenerator --> OpenAIAPI
+    ResponseGenerator --> OpenAIAPI
+    TopicExtractor --> OpenAIAPI
+    Summarizer --> OpenAIAPI
+    
+    ResponseGenerator --> PerplexityAPI
+    
+    FirebaseAdmin --> FirebaseServices
+    ClientLibs --> FirebaseServices
+    
+    VoiceControls --> API
+    API --> ElevenLabsAPI
+    
+    %% Authentication flow
+    Auth --> FirebaseAdmin
+    Auth --> FirebaseServices
+    
+    %% Main data flows
+    DebateManager --> Collections
+    Collections --> DebateManager
+    
+    %% Error handling and fallbacks
+    ErrorHandling --> MockImplementations
+    
+    %% Client-side state management
+    ClientHooks --> ClientLibs
+    
+    %% Optional components (dotted lines)
+    linkStyle 30 stroke-dasharray: 5 5
+    linkStyle 31 stroke-dasharray: 5 5
+    
+    %% Add styling
+    classDef primary fill:#f9f,stroke:#333,stroke-width:2px
+    classDef secondary fill:#bbf,stroke:#333,stroke-width:1px
+    classDef external fill:#fbb,stroke:#333,stroke-width:1px
+    
+    class Server,AIEngine primary
+    class Client,ContentProcessing,DataStorage,ServerMiddleware secondary
+    class ExternalServices external

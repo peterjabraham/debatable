@@ -1,8 +1,7 @@
 import './globals.css';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/ThemeProvider';
-import { ToastProvider } from '@/components/providers/ToastProvider';
-import { AuthProvider } from '@/components/providers/AuthProvider';
+import { AppToastProvider } from '@/components/providers/ToastProvider';
 import { Providers } from '@/lib/providers';
 import { Metadata } from 'next';
 
@@ -27,13 +26,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body className="min-h-screen bg-black antialiased">
         <Providers>
-          <AuthProvider>
-            <ThemeProvider>
-              <ToastProvider>
-                {children}
-              </ToastProvider>
-            </ThemeProvider>
-          </AuthProvider>
+          <ThemeProvider>
+            <AppToastProvider>
+              {children}
+            </AppToastProvider>
+          </ThemeProvider>
         </Providers>
       </body>
     </html>

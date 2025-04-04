@@ -40,6 +40,23 @@ const defaultVoiceSettings: VoiceSettings = {
     use_speaker_boost: true,
 };
 
+// This is a wrapper function that uses textToSpeech - it's imported in the voice route
+export async function synthesizeSpeech(
+    text: string,
+    voiceId: string
+): Promise<{ audio: ArrayBuffer; usage: ElevenLabsUsage }> {
+    try {
+        const { audioBuffer, usage } = await textToSpeech(text, voiceId);
+        return {
+            audio: audioBuffer,
+            usage
+        };
+    } catch (error) {
+        console.error('Error in synthesizeSpeech:', error);
+        throw new Error(`Failed to synthesize speech: ${error.message}`);
+    }
+}
+
 export async function textToSpeech(
     text: string,
     voiceId: string = DEFAULT_VOICES.male1,

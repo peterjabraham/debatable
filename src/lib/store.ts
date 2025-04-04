@@ -30,6 +30,7 @@ interface DebateState {
     resetUserStance: () => void;
     setExperts: (experts: Expert[]) => void;
     addMessage: (message: Message) => void;
+    setMessages: (messages: Message[]) => void;
     processCitationsInMessage: (messageId: string) => void;
     setIsGenerating: (isGenerating: boolean) => void;
     setUseVoiceSynthesis: (useVoice: boolean) => void;
@@ -96,6 +97,19 @@ export const useDebateStore = create<DebateState>((set, get) => ({
                 apiName: apiSafeName
             }]
         };
+    }),
+    setMessages: (messages) => set({
+        messages: messages.map(message => {
+            // Create a safe name for OpenAI API if one exists
+            const apiSafeName = message.speaker ? sanitizeNameForOpenAI(message.speaker) : undefined;
+
+            // Ensure each message has an ID
+            return {
+                ...message,
+                id: message.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                apiName: apiSafeName
+            };
+        })
     }),
     processCitationsInMessage: (messageId) => set((state) => {
         const msgIndex = state.messages.findIndex(m => m.id === messageId);
