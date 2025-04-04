@@ -672,4 +672,225 @@ Firestore's eventual consistency model can lead to race conditions.
 - [API Integration](./API-Integration.md)
 - [Authentication](../features/Authentication.md)
 - [User Features](../features/User-Features.md)
-- [GOOGLE_CLOUD_SETUP.md](../../GOOGLE_CLOUD_SETUP.md) 
+- [GOOGLE_CLOUD_SETUP.md](../../GOOGLE_CLOUD_SETUP.md)
+
+## OAuth Authentication with Firebase
+
+NextAuth.js and Firebase can be used together to provide a seamless authentication experience. This section covers the integration between OAuth providers (via NextAuth.js) and Firebase authentication.
+
+### Integration Architecture
+
+```
+┌────────────────┐      ┌────────────────┐      ┌────────────────┐
+│                │      │                │      │                │
+│  NextAuth.js   │─────▶│  OAuth         │─────▶│  NextAuth      │
+│  Login         │      │  Provider      │      │  Callback      │
+│                │      │  (Google/etc)  │      │                │
+└────────────────┘      └────────────────┘      └────────────────┘
+                                                       │
+                                                       ▼
+┌────────────────┐      ┌────────────────┐      ┌────────────────┐
+│                │      │                │      │                │
+│  Firebase      │◀─────│  Firebase      │◀─────│  Server-side   │
+│  Firestore     │      │  Auth          │      │  Session       │
+│  User Data     │      │  Integration   │      │  Creation      │
+│                │      │                │      │                │
+└────────────────┘      └────────────────┘      └────────────────┘
+```
+
+### NextAuth and Firebase Configuration
+
+The key to integrating NextAuth with Firebase is using the NextAuth callbacks to synchronize user data with Firebase:
+
+```typescript
+// src/lib/auth.ts
+import { NextAuthOptions } from 'next-auth';
+import { createUserOrUpdateProfile } from './db/users';
+
+export const authOptions: NextAuthOptions = {
+  // ... existing NextAuth options
+  
+  callbacks: {
+    async session({ session, token }) {
+      // Existing session logic
+      
+      // Return the enhanced session
+      return session;
+    },
+    
+    async jwt({ token, user, account, profile }) {
+      // Existing JWT logic
+      
+      // If this is a sign-in event with a user
+      if (user && account) {
+        try {
+          // Create or update the user in Firestore
+          await createUserOrUpdateProfile(token.sub, {
+            provider: account.provider,
+            name: user.name,
+            email: user.email,
+            image: user.image,
+          });
+        } catch (error) {
+          console.error('Failed to sync user with Firebase:', error);
+        }
+      }
+      
+      return token;
+    },
+  },
+};
+```
+
+### User Profile Synchronization
+
+The Firebase user profile should be kept in sync with the OAuth provider's data. Here's an implementation for the Firestore function referenced above:
+
+```typescript
+// src/lib/db/users.ts
+import db from './firebase-admin';
+import { COLLECTIONS } from './collections';
+
+export async function createUserOrUpdateProfile(userId, userData) {
+  try {
+    const userRef = db.collection(COLLECTIONS.USERS).doc(userId);
+    const userDoc = await userRef.get();
+    
+    const timestamp = new Date().toISOString();
+    
+    // Default data for new users
+    const defaultUserData = {
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      lastLoginAt: timestamp,
+      preferences: {
+        theme: 'light',
+        notifications: true,
+      },
+      // Add any application-specific default fields
+    };
+    
+    if (!userDoc.exists) {
+      // Create a new user profile
+      await userRef.set({
+        ...defaultUserData,
+        ...userData,
+      });
+      
+      console.log(`Created new user profile for ${userId}`);
+    } else {
+      // Update existing user profile
+      await userRef.update({
+        ...userData,
+        updatedAt: timestamp,
+        lastLoginAt: timestamp,
+      });
+      
+      console.log(`Updated existing profile for ${userId}`);
+    }
+    
+    return { id: userId, ...userData };
+  } catch (error) {
+    console.error('Error creating/updating user profile:', error);
+    throw error;
+  }
+}
+```
+
+### Troubleshooting OAuth with Firebase
+
+When using OAuth with Firebase, several issues can arise:
+
+#### 1. redirect_uri_mismatch Error
+
+This common error appears when the OAuth provider's registered redirect URI doesn't match the actual callback URL.
+
+**Solution:**
+- Check NEXTAUTH_URL environment variable matches your deployment URL
+- Verify OAuth provider (Google, GitHub, etc.) has the correct redirect URIs configured
+- For Google, ensure the authorized redirect URI includes the exact path: `/api/auth/callback/google`
+
+See [NextAuth-OAuth-Guide.md](./NextAuth-OAuth-Guide.md) for complete troubleshooting steps.
+
+#### 2. Firebase Authentication Issues
+
+If NextAuth.js works but Firebase isn't receiving user data:
+
+**Solution:**
+- Verify Firebase Admin SDK is properly initialized
+- Check JWT callback is properly synchronizing user data
+- Ensure environment variables for Firebase are correct
+- Test Firestore write permissions
+
+#### 3. Session Data Not Persisting
+
+If session data doesn't persist between page refreshes:
+
+**Solution:**
+- Check NextAuth.js session configuration
+- Verify the cookie settings are appropriate for your environment
+- Make sure the NEXTAUTH_SECRET is properly set
+- Check for secure cookie issues in development vs production
+
+### Testing OAuth and Firebase Integration
+
+Here's a utility function to test the integration between OAuth and Firebase:
+
+```typescript
+// src/lib/test-utils/auth-firebase-test.ts
+import { getFirestore } from 'firebase-admin/firestore';
+
+export async function verifyUserInFirestore(userId: string) {
+  try {
+    const db = getFirestore();
+    const userDoc = await db.collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      throw new Error(`User ${userId} not found in Firestore`);
+    }
+    
+    const userData = userDoc.data();
+    
+    // Check essential fields are present
+    const requiredFields = ['name', 'email', 'provider', 'createdAt', 'updatedAt'];
+    const missingFields = requiredFields.filter(field => !userData[field]);
+    
+    if (missingFields.length > 0) {
+      throw new Error(`User ${userId} is missing required fields: ${missingFields.join(', ')}`);
+    }
+    
+    return {
+      success: true,
+      message: `User ${userId} verified in Firestore`,
+      userData,
+    };
+  } catch (error) {
+    console.error('Error verifying user in Firestore:', error);
+    return {
+      success: false,
+      message: error.message,
+      error,
+    };
+  }
+}
+```
+
+### Best Practices for OAuth with Firebase
+
+1. **Separate Environments**
+   - Use separate Firebase projects for development and production
+   - Configure different OAuth applications for each environment
+
+2. **Security Rules**
+   - Implement Firebase security rules to restrict data access
+   - Use user IDs from JWT tokens to secure user-specific data
+
+3. **Error Handling**
+   - Add robust error handling for OAuth and Firebase operations
+   - Implement fallback mechanisms for authentication failures
+
+4. **Testing**
+   - Write comprehensive tests for authentication flows
+   - Test both the NextAuth.js and Firebase components
+
+For a complete guide to troubleshooting OAuth issues with NextAuth.js, refer to the [NextAuth OAuth Integration Guide](./NextAuth-OAuth-Guide.md). 
