@@ -29,7 +29,7 @@ const DISABLE_API_TESTING = true;
 const DISABLE_DEBUG_LOGS = true;
 
 // Add a flag to indicate if the backend API server is running
-const API_SERVER_AVAILABLE = false; // Set to false since the backend server is not available
+const API_SERVER_AVAILABLE = true; // Change this to true to enable real API calls
 
 // Conditionally log based on debug setting
 const debugLog = (...args: any[]) => {
@@ -705,6 +705,17 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                 selectedExperts = data.experts;
                                 apiSuccess = true;
                                 break;
+                            } else {
+                                console.warn('API returned valid response but no experts:', data);
+                            }
+                        } else {
+                            console.warn(`API returned error status: ${response.status}`);
+                            // Try to get error details
+                            try {
+                                const errorText = await response.text();
+                                console.warn('API error details:', errorText);
+                            } catch (err) {
+                                console.warn('Could not read error response');
                             }
                         }
                     } catch (endpointError) {
@@ -742,6 +753,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                     showError(apiError);
 
                     updateStepState('expertLoading', 'error', 'Failed to generate experts');
+
+                    // In production, we should NOT fall back to mock experts
+                    // but rather show a clear error state to the user
                     throw new Error('Could not generate experts from API');
                 }
             } else {
@@ -1290,7 +1304,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
             // Create an additional error specifically for the toast
             const docAnalysisError = createError(
-                'DOCUMENT_ANALYSIS_ERROR',
+                'API_ERROR',
                 'Failed to analyze document',
                 'medium',
                 true
@@ -1787,7 +1801,16 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                 <div id="expert-retry-button" className="mt-6 opacity-0" style={{ animation: 'fadeIn 0.5s ease-in forwards 15s' }}>
                                                     <Button
                                                         onClick={() => {
+                                                            console.log("Retry button clicked, attempting to regenerate experts");
+                                                            // Reset loading states
                                                             setExpertsLoading(false);
+                                                            setIsLoading(false);
+                                                            // Reset error states
+                                                            updateStepState('expertLoading', 'idle');
+                                                            clearError();
+                                                            // Start fresh expert generation attempt
+                                                            setExpertsLoading(true);
+                                                            setIsLoading(true);
                                                             selectExperts();
                                                         }}
                                                         variant="outline"
