@@ -158,6 +158,38 @@ const mockExperts: Expert[] = [
     } as Expert
 ];
 
+// Test implementation of expert API for development mode
+const testGenerateExperts = async (topic: string, expertType: string): Promise<Expert[]> => {
+    console.log('TEST GENERATING EXPERTS for topic:', topic, 'type:', expertType);
+
+    // Simulate API processing time
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Generate expert for the specific topic to simulate real API functionality
+    const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === expertType);
+
+    // Customize experts to the topic
+    const customizedExperts = filteredMockExperts.slice(0, 2).map(expert => {
+        const topicName = typeof topic === 'string'
+            ? (topic.startsWith('{') ? JSON.parse(topic).title : topic)
+            : 'the topic';
+
+        // Generate a unique ID
+        const uniqueId = `exp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+        return {
+            ...expert,
+            id: uniqueId,
+            // Customize perspective based on topic
+            perspective: expert.stance === 'pro'
+                ? `As someone who supports action on ${topicName}, I believe this is an important area that deserves our attention.`
+                : `I have reservations about some aspects of ${topicName} and think we need to carefully examine the assumptions being made.`
+        };
+    });
+
+    return customizedExperts;
+};
+
 export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
     const {
         topic,
@@ -759,29 +791,45 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                     throw new Error('Could not generate experts from API');
                 }
             } else {
-                // DEVELOPMENT MODE: Skip API calls and immediately use mock data
-                console.log('DEVELOPMENT MODE: Using mock experts directly (skipping API calls)');
+                // DEVELOPMENT MODE: Use our test implementation for better testing
+                console.log('DEVELOPMENT MODE: Using test API implementation');
 
-                // Filter mock experts based on the selected type
-                const currentExpertType = expertType || 'ai';
-                const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === currentExpertType);
+                try {
+                    // Use our test implementation which simulates API behavior but works locally
+                    const currentExpertType = expertType || 'ai';
 
-                // Take the first two experts (one pro, one con)
-                const selectedMockExperts = filteredMockExperts.slice(0, 2);
+                    // This function simulates the API with topic-specific experts
+                    const selectedExperts = await testGenerateExperts(currentTopic, currentExpertType);
 
-                // Test the mock experts
-                debugTest.testMockExpertFallback(true, selectedMockExperts);
+                    console.log('Generated test experts:', selectedExperts);
+                    setExperts(selectedExperts);
+                    setExpertsSelected(true);
+                    updateStepState('expertLoading', 'success', 'Experts selected successfully!');
+                    showInfo('Using Test API', 'Generated test experts based on your topic (development mode)');
 
-                console.log('Selected mock experts:', selectedMockExperts);
-                setExperts(selectedMockExperts);
-                setExpertsSelected(true);
-                updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-                showInfo('Using Sample Experts', 'Mock experts are being displayed in development mode');
+                    // Clear loading states
+                    setExpertsLoading(false);
+                    setIsLoading(false);
+                    return;
+                } catch (testError) {
+                    console.error('Test API error:', testError);
 
-                // Clear loading states
-                setExpertsLoading(false);
-                setIsLoading(false);
-                return;
+                    // Fallback to static mock experts
+                    console.log('Test API failed, falling back to static mock experts');
+                    const currentExpertType = expertType || 'ai';
+                    const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === currentExpertType);
+                    const selectedMockExperts = filteredMockExperts.slice(0, 2);
+
+                    setExperts(selectedMockExperts);
+                    setExpertsSelected(true);
+                    updateStepState('expertLoading', 'success', 'Experts selected successfully!');
+                    showInfo('Using Sample Experts', 'Static mock experts are being displayed (fallback)');
+
+                    // Clear loading states
+                    setExpertsLoading(false);
+                    setIsLoading(false);
+                    return;
+                }
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1808,10 +1856,105 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                             // Reset error states
                                                             updateStepState('expertLoading', 'idle');
                                                             clearError();
-                                                            // Start fresh expert generation attempt
+
+                                                            // Start fresh expert generation attempt - directly call API
+                                                            console.log("PRODUCTION MODE RETRY: Making direct API call to generate experts");
                                                             setExpertsLoading(true);
                                                             setIsLoading(true);
-                                                            selectExperts();
+
+                                                            // Get current topic
+                                                            const currentTopic = topic || selectedTopic;
+
+                                                            if (!currentTopic) {
+                                                                console.warn('Missing topic, cannot select experts');
+                                                                showWarning('Missing Topic', 'Please enter a topic first');
+                                                                setExpertsLoading(false);
+                                                                setIsLoading(false);
+                                                                return;
+                                                            }
+
+                                                            // Parse topic data
+                                                            let topicTitle = currentTopic;
+                                                            let topicArguments: any[] = [];
+
+                                                            try {
+                                                                if (currentTopic.startsWith('{') && currentTopic.includes('title')) {
+                                                                    const parsedTopic = JSON.parse(currentTopic);
+                                                                    topicTitle = parsedTopic.title;
+
+                                                                    if (parsedTopic.data && parsedTopic.data.arguments) {
+                                                                        topicArguments = parsedTopic.data.arguments;
+                                                                    }
+                                                                }
+                                                            } catch (e) {
+                                                                console.warn('Failed to parse topic data, using as plain text');
+                                                            }
+
+                                                            updateStepState('expertLoading', 'loading', 'Selecting experts...');
+
+                                                            // Direct API call with a longer timeout
+                                                            (async () => {
+                                                                try {
+                                                                    const controller = new AbortController();
+                                                                    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
+
+                                                                    const response = await fetch('/api/debate', {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                        body: JSON.stringify({
+                                                                            action: 'select-experts',
+                                                                            topic: topicTitle,
+                                                                            expertType: expertType || 'ai',
+                                                                            count: 2,
+                                                                            arguments: topicArguments
+                                                                        }),
+                                                                        signal: controller.signal
+                                                                    });
+
+                                                                    clearTimeout(timeoutId);
+
+                                                                    if (response.ok) {
+                                                                        const data = await response.json();
+
+                                                                        if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                                                                            console.log('Successfully retrieved experts from API:', data.experts);
+                                                                            setExperts(data.experts);
+                                                                            setExpertsSelected(true);
+                                                                            updateStepState('expertLoading', 'success', 'Experts generated successfully!');
+                                                                            showSuccess('Experts Generated', 'Debate experts have been selected based on your topic');
+                                                                        } else {
+                                                                            console.warn('API returned valid response but no experts:', data);
+                                                                            throw new Error('No experts returned from API');
+                                                                        }
+                                                                    } else {
+                                                                        console.warn(`API returned error status: ${response.status}`);
+                                                                        let errorMsg = 'API returned an error';
+
+                                                                        try {
+                                                                            const errorText = await response.text();
+                                                                            console.warn('API error details:', errorText);
+                                                                            errorMsg = errorText;
+                                                                        } catch (err) {
+                                                                            console.warn('Could not read error response');
+                                                                        }
+
+                                                                        throw new Error(errorMsg);
+                                                                    }
+                                                                } catch (error) {
+                                                                    console.error('Error generating experts:', error);
+                                                                    updateStepState('expertLoading', 'error', 'Failed to generate experts');
+                                                                    showError(createError(
+                                                                        'API_ERROR',
+                                                                        'Failed to generate experts. Please try again later.',
+                                                                        'medium',
+                                                                        true,
+                                                                        { topic: topicTitle }
+                                                                    ));
+                                                                } finally {
+                                                                    setExpertsLoading(false);
+                                                                    setIsLoading(false);
+                                                                }
+                                                            })();
                                                         }}
                                                         variant="outline"
                                                         size="sm"
