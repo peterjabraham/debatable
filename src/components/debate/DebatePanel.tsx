@@ -502,8 +502,11 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         console.log('- ExpertsLoading:', expertsLoading);
         console.log('- ExpertsSelected:', expertsSelected);
 
-        if (!selectedTopic) {
-            console.warn('Cannot initialize debate: missing topic', { selectedTopic });
+        // More robust check for topic to prevent minification issues
+        const currentTopic = selectedTopic || '';
+        if (!currentTopic || currentTopic.trim() === '') {
+            console.warn('Cannot initialize debate: missing topic', { selectedTopic: currentTopic });
+            showWarning('Missing Topic', 'Please enter a debate topic first');
             return;
         }
 
@@ -514,19 +517,19 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             setExpertType('ai');
         }
 
-        console.log('Initializing debate with topic:', selectedTopic, 'and participant type:', selectedParticipantType || 'ai');
+        console.log('Initializing debate with topic:', currentTopic, 'and participant type:', selectedParticipantType || 'ai');
         const newDebateId = uuidv4();
         updateStepState('topicInitialization', 'loading', 'Initializing debate...');
 
         try {
             // Initialize directly with the generated debateId
-            initializeDebate(newDebateId, selectedTopic);
+            initializeDebate(newDebateId, currentTopic);
             updateStepState('topicInitialization', 'success', 'Debate initialized!');
             showSuccess('Debate Initialized', 'Experts are ready');
 
             // If no experts are loaded, force expert generation regardless of environment
             if (experts.length === 0) {
-                console.log("No experts found, generating experts for topic:", selectedTopic);
+                console.log("No experts found, generating experts for topic:", currentTopic);
                 setExpertsLoading(true);
 
                 try {
@@ -576,7 +579,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 'Failed to initialize debate',
                 'high',
                 true,
-                { topic: selectedTopic, expertType: selectedParticipantType || 'ai' }
+                { topic: currentTopic, expertType: selectedParticipantType || 'ai' }
             );
             handleError(appError);
             updateStepState('topicInitialization', 'error', 'Failed to initialize debate');
