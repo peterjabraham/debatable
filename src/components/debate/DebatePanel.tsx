@@ -185,11 +185,11 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
     const { handleError, clearError, retry, canRetry } = useErrorHandler({
         maxRetries: 3,
         onError: (error) => {
-            displayError(error);
+            showError(error);
         },
     });
     // Extract toast functions only once
-    const { showError: displayError, showSuccess, showWarning, showInfo } = useToast();
+    const { showError, showSuccess, showWarning, showInfo } = useToast();
 
     const [showSummary, setShowSummary] = useState(false);
     const [userTopic, setUserTopic] = useState('');
@@ -650,12 +650,16 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 let apiSuccess = false;
                 let selectedExperts = [];
 
-                // Try each endpoint until one succeeds
+                // Try each endpoint until one succeeds, with timeout
                 for (const endpoint of apiEndpoints) {
                     if (apiSuccess) break;
 
                     try {
                         console.log(`Attempting to select experts via ${endpoint}...`);
+
+                        // Add timeout to prevent infinite waiting for response
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
 
                         const response = await fetch(`${endpoint}`, {
                             method: 'POST',
@@ -666,8 +670,11 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                 expertType: expertType || 'ai',
                                 count: 2,
                                 arguments: topicArguments
-                            })
+                            }),
+                            signal: controller.signal
                         });
+
+                        clearTimeout(timeoutId);
 
                         if (response.ok) {
                             const data = await response.json();
@@ -697,8 +704,23 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                     setIsLoading(false);
                     return;
                 } else {
-                    // If all API endpoints fail, fall through to using mock experts
-                    console.warn('All API endpoints failed, falling back to mock experts');
+                    // If all API endpoints fail in production, show a clear error
+                    // and reset loading states to prevent stuck UI
+                    console.warn('All API endpoints failed to generate experts');
+                    setExpertsLoading(false);
+                    setIsLoading(false);
+
+                    // Create proper error object
+                    const apiError = createError(
+                        'API_ERROR',
+                        'Unable to generate experts for this topic. Please try again or try a different topic.',
+                        'medium',
+                        true,
+                        { topic: topicTitle }
+                    );
+                    showError(apiError);
+
+                    updateStepState('expertLoading', 'error', 'Failed to generate experts');
                     throw new Error('Could not generate experts from API');
                 }
             } else {
@@ -1247,12 +1269,12 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
             // Create an additional error specifically for the toast
             const docAnalysisError = createError(
-                'API_ERROR',
-                'Unable to analyze the document. Please try again or use a different file.',
+                'DOCUMENT_ANALYSIS_ERROR',
+                'Failed to analyze document',
                 'medium',
                 true
             );
-            displayError(docAnalysisError);
+            showError(docAnalysisError);
         } finally {
             // Clear the file input value
             if (fileInputRef.current) {
