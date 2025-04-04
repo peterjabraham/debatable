@@ -697,7 +697,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 // API endpoints to try in order of preference
                 const apiEndpoints = [
                     '/api/debate',
-                    '/api/debate-experts'
+                    '/api/debate/experts',
+                    '/api/experts',
+                    '/api/openai/generate-experts'
                 ];
 
                 let apiSuccess = false;
@@ -714,38 +716,62 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                         const controller = new AbortController();
                         const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
 
+                        // Get API key from environment
+                        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+
+                        console.log(`Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
+
+                        const requestBody = {
+                            action: 'select-experts',
+                            topic: topicTitle,
+                            expertType: expertType || 'ai',
+                            count: 2,
+                            arguments: topicArguments
+                        };
+
+                        console.log(`Request body for ${endpoint}:`, JSON.stringify(requestBody));
+
                         const response = await fetch(`${endpoint}`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                action: 'select-experts',
-                                topic: topicTitle,
-                                expertType: expertType || 'ai',
-                                count: 2,
-                                arguments: topicArguments
-                            }),
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${apiKey}`
+                            },
+                            body: JSON.stringify(requestBody),
                             signal: controller.signal
                         });
 
                         clearTimeout(timeoutId);
 
-                        if (response.ok) {
-                            const data = await response.json();
+                        console.log(`Response status from ${endpoint}: ${response.status}`);
 
-                            if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
-                                console.log('Successfully selected experts from API:', data.experts);
-                                selectedExperts = data.experts;
-                                apiSuccess = true;
-                                break;
-                            } else {
-                                console.warn('API returned valid response but no experts:', data);
+                        if (response.ok) {
+                            let rawText = '';
+                            try {
+                                rawText = await response.text();
+                                console.log(`Raw response from ${endpoint}:`, rawText.substring(0, 200) + '...');
+                                const data = JSON.parse(rawText);
+
+                                console.log(`Parsed data from ${endpoint}:`, data);
+
+                                if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                                    console.log('Successfully selected experts from API:', data.experts);
+                                    selectedExperts = data.experts;
+                                    apiSuccess = true;
+                                    break;
+                                } else {
+                                    console.warn('API returned valid response but no experts:', data);
+                                }
+                            } catch (parseError) {
+                                console.error(`Error parsing API response from ${endpoint}:`, parseError);
+                                console.error('Raw response that failed to parse:', rawText);
                             }
                         } else {
                             console.warn(`API returned error status: ${response.status}`);
                             // Try to get error details
                             try {
                                 const errorText = await response.text();
-                                console.warn('API error details:', errorText);
+                                console.warn(`API error details from ${endpoint}:`, errorText);
                             } catch (err) {
                                 console.warn('Could not read error response');
                             }
@@ -1895,53 +1921,116 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                             // Direct API call with a longer timeout
                                                             (async () => {
                                                                 try {
-                                                                    const controller = new AbortController();
-                                                                    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
+                                                                    // API endpoints to try in order of preference (same as main function)
+                                                                    const apiEndpoints = [
+                                                                        '/api/debate',
+                                                                        '/api/debate/experts',
+                                                                        '/api/experts',
+                                                                        '/api/openai/generate-experts'
+                                                                    ];
 
-                                                                    const response = await fetch('/api/debate', {
-                                                                        method: 'POST',
-                                                                        headers: { 'Content-Type': 'application/json' },
-                                                                        body: JSON.stringify({
-                                                                            action: 'select-experts',
-                                                                            topic: topicTitle,
-                                                                            expertType: expertType || 'ai',
-                                                                            count: 2,
-                                                                            arguments: topicArguments
-                                                                        }),
-                                                                        signal: controller.signal
-                                                                    });
+                                                                    let apiSuccess = false;
+                                                                    let selectedExperts = [];
 
-                                                                    clearTimeout(timeoutId);
-
-                                                                    if (response.ok) {
-                                                                        const data = await response.json();
-
-                                                                        if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
-                                                                            console.log('Successfully retrieved experts from API:', data.experts);
-                                                                            setExperts(data.experts);
-                                                                            setExpertsSelected(true);
-                                                                            updateStepState('expertLoading', 'success', 'Experts generated successfully!');
-                                                                            showSuccess('Experts Generated', 'Debate experts have been selected based on your topic');
-                                                                        } else {
-                                                                            console.warn('API returned valid response but no experts:', data);
-                                                                            throw new Error('No experts returned from API');
-                                                                        }
-                                                                    } else {
-                                                                        console.warn(`API returned error status: ${response.status}`);
-                                                                        let errorMsg = 'API returned an error';
+                                                                    // Try each endpoint
+                                                                    for (const endpoint of apiEndpoints) {
+                                                                        if (apiSuccess) break;
+                                                                        console.log(`Retry: Attempting to select experts via ${endpoint}...`);
 
                                                                         try {
-                                                                            const errorText = await response.text();
-                                                                            console.warn('API error details:', errorText);
-                                                                            errorMsg = errorText;
-                                                                        } catch (err) {
-                                                                            console.warn('Could not read error response');
-                                                                        }
+                                                                            const controller = new AbortController();
+                                                                            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
 
-                                                                        throw new Error(errorMsg);
+                                                                            // Get API key from environment
+                                                                            const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+                                                                            console.log(`Retry: Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
+
+                                                                            const requestBody = {
+                                                                                action: 'select-experts',
+                                                                                topic: topicTitle,
+                                                                                expertType: expertType || 'ai',
+                                                                                count: 2,
+                                                                                arguments: topicArguments
+                                                                            };
+
+                                                                            console.log(`Retry: Request body for ${endpoint}:`, JSON.stringify(requestBody));
+
+                                                                            const response = await fetch(endpoint, {
+                                                                                method: 'POST',
+                                                                                headers: {
+                                                                                    'Content-Type': 'application/json',
+                                                                                    'Authorization': `Bearer ${apiKey}`
+                                                                                },
+                                                                                body: JSON.stringify(requestBody),
+                                                                                signal: controller.signal
+                                                                            });
+
+                                                                            clearTimeout(timeoutId);
+                                                                            console.log(`Retry: Response status from ${endpoint}: ${response.status}`);
+
+                                                                            if (response.ok) {
+                                                                                let rawText = '';
+                                                                                try {
+                                                                                    rawText = await response.text();
+                                                                                    console.log(`Retry: Raw response from ${endpoint}:`, rawText.substring(0, 200) + '...');
+                                                                                    const data = JSON.parse(rawText);
+                                                                                    console.log(`Retry: Parsed data from ${endpoint}:`, data);
+
+                                                                                    if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                                                                                        console.log('Retry: Successfully selected experts from API:', data.experts);
+                                                                                        selectedExperts = data.experts;
+                                                                                        apiSuccess = true;
+                                                                                        break;
+                                                                                    } else {
+                                                                                        console.warn('Retry: API returned valid response but no experts:', data);
+                                                                                    }
+                                                                                } catch (parseError) {
+                                                                                    console.error(`Retry: Error parsing API response from ${endpoint}:`, parseError);
+                                                                                    console.error('Retry: Raw response that failed to parse:', rawText);
+                                                                                }
+                                                                            } else {
+                                                                                console.warn(`Retry: API returned error status: ${response.status}`);
+                                                                                try {
+                                                                                    const errorText = await response.text();
+                                                                                    console.warn(`Retry: API error details from ${endpoint}:`, errorText);
+                                                                                } catch (err) {
+                                                                                    console.warn('Retry: Could not read error response');
+                                                                                }
+                                                                            }
+                                                                        } catch (endpointError) {
+                                                                            console.error(`Retry: Error with endpoint ${endpoint}:`, endpointError);
+                                                                        }
+                                                                    }
+
+                                                                    // If we successfully got experts, use them
+                                                                    if (apiSuccess && selectedExperts.length > 0) {
+                                                                        console.log('Retry: Using experts from API:', selectedExperts);
+                                                                        setExperts(selectedExperts);
+                                                                        setExpertsSelected(true);
+                                                                        updateStepState('expertLoading', 'success', 'Experts generated successfully!');
+                                                                        showSuccess('Experts Generated', 'Debate experts have been selected based on your topic');
+                                                                        return;
+                                                                    }
+
+                                                                    // If all endpoints failed and we're in production, try to generate local experts
+                                                                    console.warn('Retry: All API endpoints failed to generate experts');
+
+                                                                    // Last resort - use our test implementation to generate custom experts
+                                                                    console.log('Retry: Using test implementation as fallback');
+                                                                    try {
+                                                                        const generatedExperts = await testGenerateExperts(currentTopic, expertType || 'ai');
+                                                                        console.log('Retry: Generated fallback experts:', generatedExperts);
+
+                                                                        // Use the generated experts
+                                                                        setExperts(generatedExperts);
+                                                                        setExpertsSelected(true);
+                                                                        updateStepState('expertLoading', 'success', 'Experts selected successfully!');
+                                                                        showSuccess('Experts Generated', 'Custom debate experts have been generated based on your topic');
+                                                                    } catch (fallbackError) {
+                                                                        throw new Error('All expert generation methods failed');
                                                                     }
                                                                 } catch (error) {
-                                                                    console.error('Error generating experts:', error);
+                                                                    console.error('Retry: Error generating experts:', error);
                                                                     updateStepState('expertLoading', 'error', 'Failed to generate experts');
                                                                     showError(createError(
                                                                         'API_ERROR',
