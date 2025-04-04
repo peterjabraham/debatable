@@ -7,8 +7,13 @@ import {
     DeploymentStatus,
     ApiPerformance
 } from '@/components/monitoring';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
+import {
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
+    Button
+} from '@/components/ui';
 import { BarChart, RefreshCw, Loader2 } from 'lucide-react';
 
 export default function MonitoringPage() {

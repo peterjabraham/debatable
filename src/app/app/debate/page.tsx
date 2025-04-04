@@ -1,23 +1,14 @@
 "use client";
 
-import { DebatePanel } from '@/components/debate/DebatePanel';
-import { UserNavigation } from '@/components/UserNavigation';
-import Link from 'next/link';
-import { NotificationProvider } from '@/components/ui/notification';
+import { DebatePanel } from '@/components/debate';
+import { NotificationProvider } from '@/components/ui';
+import { AppHeader, UserNavigation } from '@/components';
 
 export default function DebatePage() {
     return (
         <NotificationProvider>
             <div className="flex min-h-screen flex-col">
-                <header className="bg- text-white border-b border-gray-800 p-4 flex justify-between items-center">
-                    <Link href="/" className="text-xl font-bold text-white">Debate-able</Link>
-                    <div className="flex items-center gap-4">
-                        <nav className="hidden md:flex space-x-6">
-                            <Link href="/" className="text-xs font-medium text-white hover:text-primary transition-colors">Home</Link>
-                        </nav>
-                        <UserNavigation />
-                    </div>
-                </header>
+                <AppHeader currentPage="debate" />
 
                 <div className="max-w-4xl mx-auto w-full p-4">
                     <div className="mb-6 bg-gray-700 text-white p-6 rounded-lg border border-gray-500">

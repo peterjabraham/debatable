@@ -94,6 +94,22 @@ const nextConfig = {
 
     // Disable React StrictMode in development to prevent double rendering
     reactStrictMode: false,
+
+    // Configure Webpack to handle imports better
+    webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+        // Improve module resolution
+        config.resolve.modules.push(path.resolve('./src'));
+
+        // Add alias for component paths
+        config.resolve.alias = {
+            ...config.resolve.alias,
+            '@': path.join(__dirname, 'src'),
+            '@components': path.join(__dirname, 'src', 'components'),
+            '@lib': path.join(__dirname, 'src', 'lib'),
+        };
+
+        return config;
+    }
 };
 
 // Enable module resolution debugging in development
