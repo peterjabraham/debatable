@@ -465,22 +465,28 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             setExpertType('ai');
         }
 
-        // IMPORTANT: Force experts to load immediately with mock data
-        // This bypasses all API calls and ensures experts always appear
-        console.log('Force loading mock experts on topic selection');
-        const currentExpertType = expertType || selectedParticipantType || 'ai';
+        // Only use mock experts in development mode, not production
+        const isProduction = process.env.NODE_ENV === 'production';
+        if (!isProduction && process.env.USE_MOCK_DATA !== 'false') {
+            // DEVELOPMENT ONLY: Force experts to load immediately with mock data
+            // This bypasses all API calls and ensures experts always appear in development
+            console.log('DEV MODE: Force loading mock experts on topic selection');
+            const currentExpertType = expertType || selectedParticipantType || 'ai';
 
-        // Get the appropriate mock experts based on the selected type
-        const filteredMockExperts = mockExperts
-            .filter((expert: Expert) => expert.type === (currentExpertType))
-            .slice(0, 2); // Take the first two (one pro, one con)
+            // Get the appropriate mock experts based on the selected type
+            const filteredMockExperts = mockExperts
+                .filter((expert: Expert) => expert.type === (currentExpertType))
+                .slice(0, 2); // Take the first two (one pro, one con)
 
-        console.log('Loading mock experts:', filteredMockExperts);
+            console.log('Loading mock experts:', filteredMockExperts);
 
-        // Set the experts in the store
-        setExperts(filteredMockExperts);
-        setExpertsSelected(true);
-        showInfo('Sample Experts Loaded', 'Using mock experts for this debate session');
+            // Set the experts in the store
+            setExperts(filteredMockExperts);
+            setExpertsSelected(true);
+            showInfo('Sample Experts Loaded (DEV MODE)', 'Using mock experts for this debate session');
+        } else {
+            console.log('PRODUCTION MODE: Will use API to generate real experts');
+        }
 
         // Ensure expert selection is shown after topic is selected
         setShowExpertSelection(true);
@@ -855,12 +861,15 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
     // Force show mock experts if not already present
     useEffect(() => {
+        // Only use mock experts in development mode, not production
+        const isProduction = process.env.NODE_ENV === 'production';
+
         // If the user clicks on a debate topic and we're showing the loading spinner but no experts appear
-        if (topic && expertsLoading && !experts.length) {
+        if (topic && expertsLoading && !experts.length && !isProduction && process.env.USE_MOCK_DATA !== 'false') {
             // Set a timeout to ensure we're not still in the process of loading
             const timer = setTimeout(() => {
                 if (!experts.length) {
-                    console.log('FORCE LOADING MOCK EXPERTS: Experts not loaded after timeout');
+                    console.log('DEV MODE: FORCE LOADING MOCK EXPERTS: Experts not loaded after timeout');
 
                     // Get the current expert type or default to ai
                     const currentExpertType = expertType || 'ai';
@@ -878,7 +887,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                     setExpertsLoading(false);
 
                     // Show notification
-                    showInfo('Using Sample Experts', 'Mock experts are being displayed for testing');
+                    showInfo('Using Sample Experts (DEV MODE)', 'Mock experts are being displayed for testing');
                 }
             }, 2000); // Wait 2 seconds before forcing experts to display
 
