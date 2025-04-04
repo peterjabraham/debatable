@@ -524,28 +524,46 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             updateStepState('topicInitialization', 'success', 'Debate initialized!');
             showSuccess('Debate Initialized', 'Experts are ready');
 
-            // Verify experts are loaded
+            // If no experts are loaded, force expert generation regardless of environment
             if (experts.length === 0) {
-                console.log("No experts found after initialization, need to load experts");
+                console.log("No experts found, generating experts for topic:", selectedTopic);
+                setExpertsLoading(true);
 
-                const isProduction = process.env.NODE_ENV === 'production';
-
-                if (isProduction) {
-                    // In production, call selectExperts to properly generate experts via API
-                    console.log("PRODUCTION MODE: Calling selectExperts to load experts via API");
-                    setExpertsLoading(true);
+                try {
+                    // Always try to select experts via API first
+                    console.log("Calling selectExperts to generate experts");
                     await selectExperts();
-                } else {
-                    // In development, use mock experts as a fallback
-                    console.log("DEVELOPMENT MODE: Loading mock experts");
-                    const currentExpertType = expertType || selectedParticipantType || 'ai';
-                    const filteredMockExperts = mockExperts
-                        .filter((expert: Expert) => expert.type === currentExpertType)
-                        .slice(0, 2);
 
-                    setExperts(filteredMockExperts);
-                    setExpertsSelected(true);
-                    showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+                    // If we still don't have experts after API call, use fallbacks only in development
+                    if (experts.length === 0 && process.env.NODE_ENV !== 'production') {
+                        console.log("API failed to load experts, using fallbacks in development mode");
+                        const currentExpertType = expertType || selectedParticipantType || 'ai';
+                        const filteredMockExperts = mockExperts
+                            .filter((expert: Expert) => expert.type === currentExpertType)
+                            .slice(0, 2);
+
+                        setExperts(filteredMockExperts);
+                        setExpertsSelected(true);
+                        showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+                    }
+                } catch (expertError) {
+                    console.error("Error generating experts:", expertError);
+                    // Only use fallbacks in development mode
+                    if (process.env.NODE_ENV !== 'production') {
+                        const currentExpertType = expertType || selectedParticipantType || 'ai';
+                        const filteredMockExperts = mockExperts
+                            .filter((expert: Expert) => expert.type === currentExpertType)
+                            .slice(0, 2);
+
+                        setExperts(filteredMockExperts);
+                        setExpertsSelected(true);
+                        showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+                    } else {
+                        // In production, show an error message
+                        showWarning('Expert Generation Failed', 'Please try again with a different topic');
+                    }
+                } finally {
+                    setExpertsLoading(false);
                 }
             }
 
@@ -1722,11 +1740,18 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
                                     {/* Fallback experts - always show these if loading takes more than 4 seconds */}
                                     <div className="mt-8 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s ease-in forwards 4s' }}>
-                                        <p className="text-sm text-center text-yellow-400 mb-4">Using sample experts while we load...</p>
-                                        <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
-                                            {/* Only show fallback experts in development mode, not production */}
-                                            {process.env.NODE_ENV !== 'production' ? (
-                                                <>
+                                        {process.env.NODE_ENV === 'production' ? (
+                                            // In production, just show a loading spinner and helpful message
+                                            <div className="flex flex-col items-center justify-center">
+                                                <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+                                                <p className="text-white text-center">Generating expert profiles based on your topic...</p>
+                                                <p className="text-sm text-muted-foreground mt-2">This may take a moment as we create tailored debate experts.</p>
+                                            </div>
+                                        ) : (
+                                            // In development, show mock experts with warning
+                                            <>
+                                                <p className="text-sm text-center text-yellow-400 mb-4">Using sample experts while we load...</p>
+                                                <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
                                                     <div className="rounded-lg overflow-hidden bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800">
                                                         <ExpertCard key="fallback_pro" expert={{
                                                             id: 'fallback_pro',
@@ -1751,14 +1776,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                             identifier: 'AI-EPE7891'
                                                         }} />
                                                     </div>
-                                                </>
-                                            ) : (
-                                                <div className="flex flex-col items-center justify-center">
-                                                    <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto mb-4" />
-                                                    <p className="text-sm text-muted-foreground">Generating expert profiles based on your topic...</p>
                                                 </div>
-                                            )}
-                                        </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             )}
