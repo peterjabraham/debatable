@@ -2,4 +2,5 @@
  * Auth Component exports
  */
 
-export { SessionProvider } from './SessionProvider'; 
+export * from './SessionProvider';
+export * from './LogoutButton'; 

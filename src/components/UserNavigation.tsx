@@ -27,7 +27,7 @@ import {
     DropdownMenuGroup
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { LogoutButton } from '@/components/auth/LogoutButton';
+import { LogoutButton } from '@/components/auth';
 
 export function UserNavigation() {
     const { data: session, status, update } = useSession();
