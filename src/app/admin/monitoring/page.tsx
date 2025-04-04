@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { DeploymentLogs } from '@/components/monitoring/DeploymentLogs';
-import { DeploymentList } from '@/components/monitoring/DeploymentList';
-import { DeploymentStatus } from '@/components/monitoring/DeploymentStatus';
-import { ApiPerformance } from '@/components/monitoring/ApiPerformance';
+import {
+    DeploymentLogs,
+    DeploymentList,
+    DeploymentStatus,
+    ApiPerformance
+} from '@/components/monitoring';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { BarChart, RefreshCw, Loader2 } from 'lucide-react';
