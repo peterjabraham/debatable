@@ -1730,56 +1730,53 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                 </div>
                             ) : (
                                 <div className="space-y-6">
-                                    {/* Loading indicator */}
-                                    <div className="flex justify-center">
-                                        <div className="text-center">
-                                            <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto mb-4" />
-                                            <p className="text-sm text-muted-foreground">Loading your experts...</p>
-                                        </div>
-                                    </div>
-
-                                    {/* Fallback experts - always show these if loading takes more than 4 seconds */}
-                                    <div className="mt-8 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s ease-in forwards 4s' }}>
+                                    {/* Single consolidated loading indicator - no duplicate spinners */}
+                                    <div className="flex flex-col items-center justify-center py-8">
+                                        <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
                                         {process.env.NODE_ENV === 'production' ? (
-                                            // In production, just show a loading spinner and helpful message
-                                            <div className="flex flex-col items-center justify-center">
-                                                <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+                                            <>
                                                 <p className="text-white text-center">Generating expert profiles based on your topic...</p>
                                                 <p className="text-sm text-muted-foreground mt-2">This may take a moment as we create tailored debate experts.</p>
-                                            </div>
+                                            </>
                                         ) : (
-                                            // In development, show mock experts with warning
                                             <>
-                                                <p className="text-sm text-center text-yellow-400 mb-4">Using sample experts while we load...</p>
-                                                <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
-                                                    <div className="rounded-lg overflow-hidden bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800">
-                                                        <ExpertCard key="fallback_pro" expert={{
-                                                            id: 'fallback_pro',
-                                                            name: 'AI Environmental Expert',
-                                                            type: 'ai',
-                                                            background: 'Specializes in environmental science and climate policy analysis',
-                                                            expertise: ['Climate Science', 'Policy Analysis'],
-                                                            stance: 'pro',
-                                                            perspective: 'I support evidence-based solutions to climate challenges.',
-                                                            identifier: 'AI-ENV5432'
-                                                        }} />
-                                                    </div>
-                                                    <div className="rounded-lg overflow-hidden bg-red-100 dark:bg-red-900/50 border border-red-200 dark:border-red-800">
-                                                        <ExpertCard key="fallback_con" expert={{
-                                                            id: 'fallback_con',
-                                                            name: 'AI Economic Policy Expert',
-                                                            type: 'ai',
-                                                            background: 'Specializes in economic policy and market impact assessment',
-                                                            expertise: ['Economics', 'Policy Analysis'],
-                                                            stance: 'con',
-                                                            perspective: 'I believe we need careful consideration of economic implications.',
-                                                            identifier: 'AI-EPE7891'
-                                                        }} />
-                                                    </div>
-                                                </div>
+                                                <p className="text-white text-center">Loading your experts...</p>
+                                                <p className="text-sm text-yellow-400 mt-2">Using sample experts in development mode.</p>
                                             </>
                                         )}
                                     </div>
+
+                                    {/* Fallback experts in development mode only - with delayed fade-in */}
+                                    {process.env.NODE_ENV !== 'production' && (
+                                        <div className="mt-8 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s ease-in forwards 4s' }}>
+                                            <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
+                                                <div className="rounded-lg overflow-hidden bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800">
+                                                    <ExpertCard key="fallback_pro" expert={{
+                                                        id: 'fallback_pro',
+                                                        name: 'AI Environmental Expert',
+                                                        type: 'ai',
+                                                        background: 'Specializes in environmental science and climate policy analysis',
+                                                        expertise: ['Climate Science', 'Policy Analysis'],
+                                                        stance: 'pro',
+                                                        perspective: 'I support evidence-based solutions to climate challenges.',
+                                                        identifier: 'AI-ENV5432'
+                                                    }} />
+                                                </div>
+                                                <div className="rounded-lg overflow-hidden bg-red-100 dark:bg-red-900/50 border border-red-200 dark:border-red-800">
+                                                    <ExpertCard key="fallback_con" expert={{
+                                                        id: 'fallback_con',
+                                                        name: 'AI Economic Policy Expert',
+                                                        type: 'ai',
+                                                        background: 'Specializes in economic policy and market impact assessment',
+                                                        expertise: ['Economics', 'Policy Analysis'],
+                                                        stance: 'con',
+                                                        perspective: 'I believe we need careful consideration of economic implications.',
+                                                        identifier: 'AI-EPE7891'
+                                                    }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
