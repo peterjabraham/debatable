@@ -524,19 +524,29 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             updateStepState('topicInitialization', 'success', 'Debate initialized!');
             showSuccess('Debate Initialized', 'Experts are ready');
 
-            // Skip selectExperts call since we already loaded experts in handleTopicSelect
-            // Just verify experts are loaded
+            // Verify experts are loaded
             if (experts.length === 0) {
-                console.log("No experts found after initialization, forcing mock experts again");
-                // Force mock experts one more time as a fallback
-                const currentExpertType = expertType || selectedParticipantType || 'ai';
-                const filteredMockExperts = mockExperts
-                    .filter((expert: Expert) => expert.type === currentExpertType)
-                    .slice(0, 2);
+                console.log("No experts found after initialization, need to load experts");
 
-                setExperts(filteredMockExperts);
-                setExpertsSelected(true);
-                showInfo('Using Sample Experts', 'Mock experts are being used for this session');
+                const isProduction = process.env.NODE_ENV === 'production';
+
+                if (isProduction) {
+                    // In production, call selectExperts to properly generate experts via API
+                    console.log("PRODUCTION MODE: Calling selectExperts to load experts via API");
+                    setExpertsLoading(true);
+                    await selectExperts();
+                } else {
+                    // In development, use mock experts as a fallback
+                    console.log("DEVELOPMENT MODE: Loading mock experts");
+                    const currentExpertType = expertType || selectedParticipantType || 'ai';
+                    const filteredMockExperts = mockExperts
+                        .filter((expert: Expert) => expert.type === currentExpertType)
+                        .slice(0, 2);
+
+                    setExperts(filteredMockExperts);
+                    setExpertsSelected(true);
+                    showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+                }
             }
 
             updateStepState('expertLoading', 'success', 'Experts selected successfully!');
@@ -604,40 +614,100 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         clearError();
 
         try {
-            // DIRECT FIX: Skip API calls and immediately use mock data
-            console.log('Using mock experts directly (skipping API calls)');
+            // Check if we're in production mode - if so, make real API calls
+            const isProduction = process.env.NODE_ENV === 'production';
 
-            // Filter mock experts based on the selected type
-            const currentExpertType = expertType || 'ai';
-            const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === currentExpertType);
+            if (isProduction) {
+                console.log('PRODUCTION MODE: Using real API to generate experts');
 
-            // Take the first two experts (one pro, one con)
-            const selectedMockExperts = filteredMockExperts.slice(0, 2);
+                // API endpoints to try in order of preference
+                const apiEndpoints = [
+                    '/api/debate',
+                    '/api/debate-experts'
+                ];
 
-            // Test the mock experts
-            debugTest.testMockExpertFallback(true, selectedMockExperts);
+                let apiSuccess = false;
+                let selectedExperts = [];
 
-            console.log('Selected mock experts:', selectedMockExperts);
-            setExperts(selectedMockExperts);
-            setExpertsSelected(true);
-            updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-            showInfo('Using Sample Experts', 'Mock experts are being displayed');
+                // Try each endpoint until one succeeds
+                for (const endpoint of apiEndpoints) {
+                    if (apiSuccess) break;
 
-            // Clear loading states
-            setExpertsLoading(false);
-            setIsLoading(false);
+                    try {
+                        console.log(`Attempting to select experts via ${endpoint}...`);
 
-            return;
+                        const response = await fetch(`${endpoint}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'select-experts',
+                                topic: topicTitle,
+                                expertType: expertType || 'ai',
+                                count: 2,
+                                arguments: topicArguments
+                            })
+                        });
 
-            // The original API call code is kept but not executed
-            // API endpoints to try in order of preference
-            const apiEndpoints = [
-                `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/debate`,
-                `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/climate-debate`
-            ];
+                        if (response.ok) {
+                            const data = await response.json();
+
+                            if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                                console.log('Successfully selected experts from API:', data.experts);
+                                selectedExperts = data.experts;
+                                apiSuccess = true;
+                                break;
+                            }
+                        }
+                    } catch (endpointError) {
+                        console.error(`Error with endpoint ${endpoint}:`, endpointError);
+                        // Continue to next endpoint
+                    }
+                }
+
+                if (apiSuccess && selectedExperts.length > 0) {
+                    // Use the experts from the API
+                    setExperts(selectedExperts);
+                    setExpertsSelected(true);
+                    updateStepState('expertLoading', 'success', 'Experts selected successfully!');
+                    showSuccess('Experts Generated', 'Debate experts have been selected based on your topic');
+
+                    // Clear loading states
+                    setExpertsLoading(false);
+                    setIsLoading(false);
+                    return;
+                } else {
+                    // If all API endpoints fail, fall through to using mock experts
+                    console.warn('All API endpoints failed, falling back to mock experts');
+                    throw new Error('Could not generate experts from API');
+                }
+            } else {
+                // DEVELOPMENT MODE: Skip API calls and immediately use mock data
+                console.log('DEVELOPMENT MODE: Using mock experts directly (skipping API calls)');
+
+                // Filter mock experts based on the selected type
+                const currentExpertType = expertType || 'ai';
+                const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === currentExpertType);
+
+                // Take the first two experts (one pro, one con)
+                const selectedMockExperts = filteredMockExperts.slice(0, 2);
+
+                // Test the mock experts
+                debugTest.testMockExpertFallback(true, selectedMockExperts);
+
+                console.log('Selected mock experts:', selectedMockExperts);
+                setExperts(selectedMockExperts);
+                setExpertsSelected(true);
+                updateStepState('expertLoading', 'success', 'Experts selected successfully!');
+                showInfo('Using Sample Experts', 'Mock experts are being displayed in development mode');
+
+                // Clear loading states
+                setExpertsLoading(false);
+                setIsLoading(false);
+                return;
+            }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.warn(`API expert selection failed: ${errorMessage}. Using mock experts instead.`);
+            console.warn(`Expert selection failed: ${errorMessage}. Using mock experts as fallback.`);
 
             // Use mock expert data as fallback
             const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === (expertType || 'ai'));
@@ -652,12 +722,18 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             setExperts(selectedMockExperts);
             setExpertsSelected(true);
             updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-            showInfo('Using Sample Experts', 'Mock experts are being used because the API is unavailable');
+
+            // Show different messages based on environment
+            if (process.env.NODE_ENV === 'production') {
+                showWarning('API Connection Issue', 'Using fallback experts due to connection issues. For the best experience, please try again later.');
+            } else {
+                showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+            }
 
             // Still log the original error
             const appError = createError(
                 'EXPERT_SELECTION_ERROR',
-                `API expert selection failed: ${errorMessage}. Using mock experts instead.`,
+                `Expert selection failed: ${errorMessage}. Using mock experts as fallback.`,
                 'medium',
                 false,
                 { topic, expertType }
@@ -1648,30 +1724,40 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                     <div className="mt-8 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s ease-in forwards 4s' }}>
                                         <p className="text-sm text-center text-yellow-400 mb-4">Using sample experts while we load...</p>
                                         <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
-                                            <div className="rounded-lg overflow-hidden bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800">
-                                                <ExpertCard key="fallback_pro" expert={{
-                                                    id: 'fallback_pro',
-                                                    name: 'AI Environmental Expert',
-                                                    type: 'ai',
-                                                    background: 'Specializes in environmental science and climate policy analysis',
-                                                    expertise: ['Climate Science', 'Policy Analysis'],
-                                                    stance: 'pro',
-                                                    perspective: 'I support evidence-based solutions to climate challenges.',
-                                                    identifier: 'AI-ENV5432'
-                                                }} />
-                                            </div>
-                                            <div className="rounded-lg overflow-hidden bg-red-100 dark:bg-red-900/50 border border-red-200 dark:border-red-800">
-                                                <ExpertCard key="fallback_con" expert={{
-                                                    id: 'fallback_con',
-                                                    name: 'AI Economic Policy Expert',
-                                                    type: 'ai',
-                                                    background: 'Specializes in economic policy and market impact assessment',
-                                                    expertise: ['Economics', 'Policy Analysis'],
-                                                    stance: 'con',
-                                                    perspective: 'I believe we need careful consideration of economic implications.',
-                                                    identifier: 'AI-EPE7891'
-                                                }} />
-                                            </div>
+                                            {/* Only show fallback experts in development mode, not production */}
+                                            {process.env.NODE_ENV !== 'production' ? (
+                                                <>
+                                                    <div className="rounded-lg overflow-hidden bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800">
+                                                        <ExpertCard key="fallback_pro" expert={{
+                                                            id: 'fallback_pro',
+                                                            name: 'AI Environmental Expert',
+                                                            type: 'ai',
+                                                            background: 'Specializes in environmental science and climate policy analysis',
+                                                            expertise: ['Climate Science', 'Policy Analysis'],
+                                                            stance: 'pro',
+                                                            perspective: 'I support evidence-based solutions to climate challenges.',
+                                                            identifier: 'AI-ENV5432'
+                                                        }} />
+                                                    </div>
+                                                    <div className="rounded-lg overflow-hidden bg-red-100 dark:bg-red-900/50 border border-red-200 dark:border-red-800">
+                                                        <ExpertCard key="fallback_con" expert={{
+                                                            id: 'fallback_con',
+                                                            name: 'AI Economic Policy Expert',
+                                                            type: 'ai',
+                                                            background: 'Specializes in economic policy and market impact assessment',
+                                                            expertise: ['Economics', 'Policy Analysis'],
+                                                            stance: 'con',
+                                                            perspective: 'I believe we need careful consideration of economic implications.',
+                                                            identifier: 'AI-EPE7891'
+                                                        }} />
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center">
+                                                    <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto mb-4" />
+                                                    <p className="text-sm text-muted-foreground">Generating expert profiles based on your topic...</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
