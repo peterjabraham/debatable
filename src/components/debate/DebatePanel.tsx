@@ -859,38 +859,31 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.warn(`Expert selection failed: ${errorMessage}. Using mock experts as fallback.`);
+            console.warn(`Expert selection failed: ${errorMessage}.`);
 
-            // Use mock expert data as fallback
-            const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === (expertType || 'ai'));
-
-            // Take the first two experts (one pro, one con)
-            const selectedMockExperts = filteredMockExperts.slice(0, 2);
-
-            // Test mock fallback
-            debugTest.testMockExpertFallback(true, selectedMockExperts);
-
-            console.log('Using mock experts as fallback:', selectedMockExperts);
-            setExperts(selectedMockExperts);
-            setExpertsSelected(true);
-            updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-
-            // Show different messages based on environment
-            if (process.env.NODE_ENV === 'production') {
-                showWarning('API Connection Issue', 'Using fallback experts due to connection issues. For the best experience, please try again later.');
-            } else {
+            // Only use mock expert data as fallback in development mode
+            if (process.env.NODE_ENV !== 'production') {
+                // Development mode fallback
+                console.log('DEVELOPMENT MODE: Using mock experts as fallback');
+                const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === (expertType || 'ai'));
+                const selectedMockExperts = filteredMockExperts.slice(0, 2);
+                console.log('Using mock experts as fallback:', selectedMockExperts);
+                setExperts(selectedMockExperts);
+                setExpertsSelected(true);
+                updateStepState('expertLoading', 'success', 'Experts selected successfully!');
                 showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
+            } else {
+                // Production mode - show clear error
+                console.error('PRODUCTION MODE: Expert generation failed with no fallback');
+                showError(createError(
+                    'EXPERT_GENERATION_ERROR',
+                    'Failed to generate experts. Our systems encountered an issue processing your topic. Please try again later or try a different topic.',
+                    'high',
+                    true,
+                    { error: errorMessage }
+                ));
+                updateStepState('expertLoading', 'error', 'Failed to generate experts');
             }
-
-            // Still log the original error
-            const appError = createError(
-                'EXPERT_SELECTION_ERROR',
-                `Expert selection failed: ${errorMessage}. Using mock experts as fallback.`,
-                'medium',
-                false,
-                { topic, expertType }
-            );
-            console.warn(appError);
 
             // Clear loading states
             setExpertsLoading(false);
@@ -2012,29 +2005,16 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                                         return;
                                                                     }
 
-                                                                    // If all endpoints failed and we're in production, try to generate local experts
-                                                                    console.warn('Retry: All API endpoints failed to generate experts');
+                                                                    // If all API endpoints failed in production, show a clear error
+                                                                    console.error('Retry: All API endpoints failed to generate experts');
+                                                                    throw new Error('All API endpoints failed to generate experts');
 
-                                                                    // Last resort - use our test implementation to generate custom experts
-                                                                    console.log('Retry: Using test implementation as fallback');
-                                                                    try {
-                                                                        const generatedExperts = await testGenerateExperts(currentTopic, expertType || 'ai');
-                                                                        console.log('Retry: Generated fallback experts:', generatedExperts);
-
-                                                                        // Use the generated experts
-                                                                        setExperts(generatedExperts);
-                                                                        setExpertsSelected(true);
-                                                                        updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-                                                                        showSuccess('Experts Generated', 'Custom debate experts have been generated based on your topic');
-                                                                    } catch (fallbackError) {
-                                                                        throw new Error('All expert generation methods failed');
-                                                                    }
                                                                 } catch (error) {
                                                                     console.error('Retry: Error generating experts:', error);
                                                                     updateStepState('expertLoading', 'error', 'Failed to generate experts');
                                                                     showError(createError(
                                                                         'API_ERROR',
-                                                                        'Failed to generate experts. Please try again later.',
+                                                                        'Failed to generate experts. Please try again later or try a different topic.',
                                                                         'medium',
                                                                         true,
                                                                         { topic: topicTitle }
