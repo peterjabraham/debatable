@@ -663,293 +663,148 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
     // Update selectExperts to always use the API regardless of environment
     const selectExperts = async () => {
-        console.log('### DEBUG: selectExperts called ###');
-        console.log('- Topic:', topic);
-        console.log('- Selected Topic:', selectedTopic);
-        console.log('- Expert Type:', expertType);
-        console.log('- Experts Length:', experts.length);
-        console.log('- ExpertsLoading:', expertsLoading);
-        console.log('- ExpertsSelected:', expertsSelected);
+        console.log('Selecting experts...');
+        updateStepState('expertSelection', 'loading', 'Finding experts for this topic...');
 
-        console.log('Starting selectExperts() function with topic:', topic, 'selectedTopic:', selectedTopic, 'expertType:', expertType);
-
-        // Use either the topic from the store or the selectedTopic local state
-        const currentTopic = topic || selectedTopic;
-
-        if (!currentTopic) {
-            console.warn('Missing topic, cannot select experts');
-            showWarning('Missing Topic', 'Please enter a topic first');
+        if (!topic && !selectedTopic) {
+            console.error('No topic provided for expert selection');
+            updateStepState('expertSelection', 'error', 'No topic provided');
+            showWarning('No Topic', 'Please enter a topic to select experts.');
             return;
         }
 
-        // Parse topic data if it's stored as JSON
-        let topicTitle = currentTopic;
-        let topicArguments = [];
-
         try {
-            // Check if the topic is stored as JSON with additional data
-            if (currentTopic.startsWith('{') && currentTopic.includes('title')) {
-                const parsedTopic = JSON.parse(currentTopic);
-                topicTitle = parsedTopic.title;
+            // First check if API is accessible at all
+            const apiEndpoint = '/api/debate-experts';
+            console.log(`Checking if API endpoint is accessible: ${apiEndpoint}`);
 
-                // Extract arguments if available
-                if (parsedTopic.data && parsedTopic.data.arguments) {
-                    topicArguments = parsedTopic.data.arguments;
-                }
+            // Parse topic for potential structured data
+            let topicTitle = topic || selectedTopic || '';
+            let topicArguments: any[] = [];
 
-                console.log('Parsed topic data:', { topicTitle, topicArguments });
-            }
-        } catch (e) {
-            console.warn('Failed to parse topic data, using as plain text:', e);
-            // Continue with topic as plain text
-        }
-
-        updateStepState('expertLoading', 'loading', 'Generating expert profiles...');
-        setIsLoading(true);
-        setExpertsLoading(true);
-        clearError();
-
-        try {
-            console.log('Generating expert profiles via API for topic:', topicTitle);
-
-            // API endpoints to try in order of preference
-            const apiEndpoints = [
-                '/api/debate',
-                '/api/debate/experts',
-                '/api/experts',
-                '/api/openai/generate-experts'
-            ];
-
-            // Function to check if an API endpoint is accessible
-            const testApiEndpoint = async (endpoint: string): Promise<boolean> => {
+            if (typeof topicTitle === 'string' && topicTitle.startsWith('{') && topicTitle.includes('title')) {
                 try {
-                    console.log(`Testing API endpoint availability: ${endpoint}`);
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout for test
+                    const parsedTopic = JSON.parse(topicTitle);
+                    topicTitle = parsedTopic.title || topicTitle;
 
-                    const response = await fetch(`${endpoint}`, {
-                        method: 'GET',
-                        signal: controller.signal
-                    });
-
-                    clearTimeout(timeoutId);
-                    console.log(`Endpoint ${endpoint} test result: ${response.status}`);
-                    return response.ok;
-                } catch (error) {
-                    const errorMessage = error instanceof Error ? error.message : String(error);
-                    console.warn(`Endpoint ${endpoint} test failed:`, errorMessage);
-                    return false;
+                    if (parsedTopic.data && parsedTopic.data.arguments) {
+                        topicArguments = parsedTopic.data.arguments;
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse topic as JSON:', e);
                 }
+            }
+
+            // Try to get experts from API
+            console.log(`Using topic: "${topicTitle}" to get experts`);
+            console.log(`Environment mode: ${process.env.NODE_ENV === 'production' ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+
+            // Check for API key
+            const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+            console.log(`API key availability: ${apiKey ? 'Available' : 'Not available'}`);
+
+            // Set timeout for API request
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+
+            // Construct proper request body for debate-experts API
+            const requestBody = {
+                action: 'select-experts',
+                topic: topicTitle,
+                expertType: expertType || 'ai',
+                count: 2
             };
 
-            // Check if at least one API endpoint is available
-            let apiAvailable = false;
-            for (const endpoint of apiEndpoints) {
-                apiAvailable = await testApiEndpoint(endpoint);
-                if (apiAvailable) {
-                    console.log(`Found available API endpoint: ${endpoint}`);
-                    break;
-                }
-            }
+            console.log('Request body:', JSON.stringify(requestBody));
 
-            if (!apiAvailable && process.env.NODE_ENV === 'production') {
-                console.error('No API endpoints are available');
-                throw new Error('API services are currently unavailable. Please try again later.');
-            }
+            try {
+                console.log(`Sending request to ${apiEndpoint}...`);
+                const response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
+                });
 
-            let apiSuccess = false;
-            let selectedExperts = [];
-            let lastError = null;
+                clearTimeout(timeoutId);
 
-            // Try each endpoint until one succeeds, with timeout
-            for (const endpoint of apiEndpoints) {
-                if (apiSuccess) break;
+                console.log(`Response status: ${response.status}`);
 
-                try {
-                    console.log(`Attempting to select experts via ${endpoint}...`);
+                if (response.ok) {
+                    const responseText = await response.text();
+                    console.log('Raw API response:', responseText.substring(0, 100) + '...');
 
-                    // Add timeout to prevent infinite waiting for response
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
+                    try {
+                        const data = JSON.parse(responseText);
 
-                    // Get API key from environment
-                    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+                        if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                            console.log(`Received ${data.experts.length} experts from API`);
 
-                    console.log(`Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
+                            // Format experts properly
+                            const formattedExperts = data.experts.map((expert: any) => ({
+                                id: expert.id || uuidv4(),
+                                name: expert.name,
+                                expertise: expert.expertise || [],
+                                stance: expert.stance || 'neutral',
+                                background: expert.background || '',
+                                voiceId: expert.voiceId || undefined
+                            }));
 
-                    const requestBody = {
-                        action: 'select-experts',
-                        topic: topicTitle,
-                        expertType: expertType || 'ai',
-                        count: 2,
-                        arguments: topicArguments
-                    };
-
-                    console.log(`Request body for ${endpoint}:`, JSON.stringify(requestBody));
-
-                    const response = await fetch(`${endpoint}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${apiKey}`
-                        },
-                        body: JSON.stringify(requestBody),
-                        signal: controller.signal
-                    });
-
-                    clearTimeout(timeoutId);
-
-                    console.log(`Response status from ${endpoint}: ${response.status}`);
-
-                    if (response.ok) {
-                        let rawText = '';
-                        try {
-                            rawText = await response.text();
-                            console.log(`Raw response from ${endpoint}:`, rawText.substring(0, 200) + '...');
-                            const data = JSON.parse(rawText);
-
-                            console.log(`Parsed data from ${endpoint}:`, data);
-
-                            if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
-                                console.log('Successfully selected experts from API:', data.experts);
-                                selectedExperts = data.experts;
-                                apiSuccess = true;
-                                break;
-                            } else {
-                                console.warn('API returned valid response but no experts:', data);
-                            }
-                        } catch (parseError) {
-                            console.error(`Error parsing API response from ${endpoint}:`, parseError);
-                            console.error('Raw response that failed to parse:', rawText);
-                            lastError = new Error(`Parse error: ${parseError.message}`);
+                            console.log('Formatted experts:', formattedExperts);
+                            setExperts(formattedExperts);
+                            updateStepState('expertSelection', 'success', 'Experts selected successfully');
+                            return formattedExperts;
+                        } else {
+                            console.warn('API response did not contain valid experts:', data);
+                            throw new Error('No experts found in API response');
                         }
-                    } else {
-                        console.warn(`API returned error status: ${response.status}`);
-                        // Try to get error details
-                        try {
-                            const errorText = await response.text();
-                            console.warn(`API error details from ${endpoint}:`, errorText);
-                            lastError = new Error(`HTTP ${response.status}: ${errorText}`);
-                        } catch (err) {
-                            console.warn('Could not read error response');
-                            lastError = new Error(`HTTP ${response.status}`);
-                        }
+                    } catch (error) {
+                        console.error('Error parsing API response:', error);
+                        throw new Error('Failed to parse API response');
                     }
-                } catch (endpointError) {
-                    console.error(`Error with endpoint ${endpoint}:`, endpointError);
-                    lastError = endpointError;
-                    // Continue to next endpoint
-                }
-            }
-
-            if (apiSuccess && selectedExperts.length > 0) {
-                // Use the experts from the API
-                if (apiSuccess && selectedExperts.length > 0) {
-                    // Use the experts from the API
-                    setExperts(selectedExperts);
-                    setExpertsSelected(true);
-                    updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-                    showSuccess('Experts Generated', 'Debate experts have been selected based on your topic');
-
-                    // Clear loading states
-                    setExpertsLoading(false);
-                    setIsLoading(false);
-                    return;
                 } else {
-                    // If all API endpoints fail in production, show a clear error
-                    // and reset loading states to prevent stuck UI
-                    console.warn('All API endpoints failed to generate experts');
-                    setExpertsLoading(false);
-                    setIsLoading(false);
-
-                    // Create proper error object
-                    const apiError = createError(
-                        'API_ERROR',
-                        'Unable to generate experts for this topic. Please try again or try a different topic.',
-                        'medium',
-                        true,
-                        { topic: topicTitle }
-                    );
-                    showError(apiError);
-
-                    updateStepState('expertLoading', 'error', 'Failed to generate experts');
-
-                    // In production, we should NOT fall back to mock experts
-                    // but rather show a clear error state to the user
-                    throw new Error('Could not generate experts from API');
+                    const errorText = await response.text();
+                    console.error(`API returned error ${response.status}:`, errorText);
+                    throw new Error(`API error: ${response.status} ${errorText.substring(0, 100)}`);
                 }
-            } else {
-                // DEVELOPMENT MODE: Use our test implementation for better testing
-                console.log('DEVELOPMENT MODE: Using test API implementation');
-
-                try {
-                    // Use our test implementation which simulates API behavior but works locally
-                    const currentExpertType = expertType || 'ai';
-
-                    // This function simulates the API with topic-specific experts
-                    const selectedExperts = await testGenerateExperts(currentTopic, currentExpertType);
-
-                    console.log('Generated test experts:', selectedExperts);
-                    setExperts(selectedExperts);
-                    setExpertsSelected(true);
-                    updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-                    showInfo('Using Test API', 'Generated test experts based on your topic (development mode)');
-
-                    // Clear loading states
-                    setExpertsLoading(false);
-                    setIsLoading(false);
-                    return;
-                } catch (testError) {
-                    console.error('Test API error:', testError);
-
-                    // Fallback to static mock experts
-                    console.log('Test API failed, falling back to static mock experts');
-                    const currentExpertType = expertType || 'ai';
-                    const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === currentExpertType);
-                    const selectedMockExperts = filteredMockExperts.slice(0, 2);
-
-                    setExperts(selectedMockExperts);
-                    setExpertsSelected(true);
-                    updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-                    showInfo('Using Sample Experts', 'Static mock experts are being displayed (fallback)');
-
-                    // Clear loading states
-                    setExpertsLoading(false);
-                    setIsLoading(false);
-                    return;
-                }
+            } catch (error) {
+                console.error('Error calling debate-experts API:', error);
+                throw error; // Propagate error to outer handler
             }
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.warn(`Expert selection failed: ${errorMessage}.`);
 
-            // Only use mock expert data as fallback in development mode
-            if (process.env.NODE_ENV !== 'production') {
-                // Development mode fallback
-                console.log('DEVELOPMENT MODE: Using mock experts as fallback');
-                const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === (expertType || 'ai'));
-                const selectedMockExperts = filteredMockExperts.slice(0, 2);
-                console.log('Using mock experts as fallback:', selectedMockExperts);
-                setExperts(selectedMockExperts);
-                setExpertsSelected(true);
-                updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-                showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
-            } else {
-                // Production mode - show clear error
+        } catch (error) {
+            console.error('Expert selection error:', error);
+
+            // In production, we don't show sample experts - we just show an error
+            if (process.env.NODE_ENV === 'production') {
                 console.error('PRODUCTION MODE: Expert generation failed with no fallback');
                 showError(createError(
                     'EXPERT_GENERATION_ERROR',
                     'Failed to generate experts. Our systems encountered an issue processing your topic. Please try again later or try a different topic.',
                     'high',
                     true,
-                    { error: errorMessage }
+                    error instanceof Error ? error.message : String(error)
                 ));
-                updateStepState('expertLoading', 'error', 'Failed to generate experts');
+                updateStepState('expertSelection', 'error', 'Failed to generate experts');
+                return;
             }
 
-            // Clear loading states
-            setExpertsLoading(false);
-            setIsLoading(false);
+            // In development, we can fall back to mock experts
+            console.warn('DEVELOPMENT MODE: Using sample experts as fallback');
+            showWarning('Using Sample Experts', 'We encountered an issue generating custom experts for this topic. Using sample experts instead.');
+
+            // Use mock experts as fallback in development
+            const fallbackExperts = mockExperts.map(expert => ({
+                ...expert,
+                id: expert.id || uuidv4(),
+            }));
+
+            setExperts(fallbackExperts);
+            updateStepState('expertSelection', 'success', 'Sample experts loaded (fallback)');
+            return fallbackExperts;
         }
     };
 
