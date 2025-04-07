@@ -314,154 +314,89 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         }));
     };
 
-    // Generate expert responses locally using OpenAI
-    const generateLocalExpertResponses = useCallback(async (currentExperts: Expert[], currentMessages: Message[] = []): Promise<any[]> => {
-        console.log('Generating local expert responses...');
+    // Generate expert responses locally
+    const generateLocalExpertResponses = async (currentExperts: Expert[], currentMessages: Message[]) => {
+        console.log('Generating responses for experts:', currentExperts);
 
-        // Set loading state
-        updateStepState('responseGeneration', 'loading', 'Generating expert responses...');
+        // Create a copy of messages for safety
+        const messagesCopy = [...currentMessages];
+        const newMessages: Message[] = [];
 
-        try {
-            // Format messages for API
-            const lastUserMessage = currentMessages.length > 0
-                ? currentMessages[currentMessages.length - 1].content
-                : '';
+        // Process each expert
+        await Promise.all(currentExperts.map(async (expert) => {
+            try {
+                console.log(`Generating response for ${expert.name}`);
 
-            console.log(`Starting response generation for ${currentExperts.length} experts`);
+                // Create a direct fetch request to the API
+                const response = await fetch('/api/debate/response', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        expert,
+                        messages: messagesCopy,
+                        topic: topic || selectedTopic || 'General debate'
+                    }),
+                });
 
-            // Since we're in a client component, use the API route
-            const responses = await Promise.all(currentExperts.map(async (expert, index) => {
-                try {
-                    // Extract topic title and arguments
-                    let topicTitle = topic;
-                    let topicArguments: any[] = [];
-
-                    // Parse topic JSON if needed
-                    if (topic && topic.startsWith('{') && topic.includes('title')) {
-                        try {
-                            const parsedTopic = JSON.parse(topic);
-                            topicTitle = parsedTopic.title;
-
-                            if (parsedTopic.data && parsedTopic.data.arguments) {
-                                topicArguments = parsedTopic.data.arguments;
-                            }
-                        } catch (e) {
-                            console.error('Failed to parse topic data:', e);
-                        }
-                    }
-
-                    console.log(`Sending API request for expert: ${expert.name}`);
-
-                    // Use Next.js API route to get the OpenAI response
-                    const response = await fetch('/api/debate/response', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            expert,
-                            messages: [
-                                ...currentMessages,
-                                ...(!currentMessages.length ? [{
-                                    role: 'user',
-                                    content: `The topic is: ${topicTitle}. Please provide your initial thoughts.`
-                                }] : [])
-                            ],
-                            topic: topicTitle,
-                            topicArguments
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        console.error(`API error (${response.status}):`, errorData);
-                        throw new Error(`API request failed with status ${response.status}: ${errorData.error || 'Unknown error'}`);
-                    }
-
-                    const data = await response.json();
-                    console.log(`Response received for ${expert.name}:`, data);
-
-                    if (!data.response && !data.content) {
-                        console.warn(`No response content received for ${expert.name}`);
-                        return {
-                            response: `I apologize, but I couldn't generate a response as ${expert.name}. Please try again.`,
-                            usage: {
-                                tokens: 0,
-                                promptTokens: 0,
-                                completionTokens: 0,
-                                cost: 0
-                            },
-                            expertName: expert.name,
-                            expertId: expert.id
-                        };
-                    }
-
-                    return {
-                        response: data.response || data.content,
-                        usage: data.usage || {
-                            tokens: 0,
-                            promptTokens: 0,
-                            completionTokens: 0,
-                            cost: 0
-                        },
-                        expertName: expert.name,
-                        expertId: expert.id
-                    };
-                } catch (error) {
-                    console.error(`Error generating response for ${expert.name}:`, error);
-                    // Return a fallback response instead of throwing
-                    return {
-                        response: `I apologize, but there was an error generating my response as ${expert.name}. ${error.message || ''}`,
-                        usage: {
-                            tokens: 0,
-                            promptTokens: 0,
-                            completionTokens: 0,
-                            cost: 0
-                        },
-                        expertName: expert.name,
-                        expertId: expert.id
-                    };
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`API error for ${expert.name}:`, response.status, errorText);
+                    throw new Error(`API request failed: ${response.status}`);
                 }
-            }));
 
-            console.log('All responses generated:', responses);
+                const data = await response.json();
+                console.log(`Response for ${expert.name}:`, data);
 
-            // Check if we received any valid responses
-            if (responses.length === 0) {
-                throw new Error('No responses were generated');
+                // Create the new message
+                const newMessage: Message = {
+                    id: uuidv4(),
+                    role: 'assistant',
+                    content: data.response,
+                    speaker: expert.name,
+                    // speakerId is not in the Message type, ensure it matches what's expected
+                    // If needed elsewhere, access the expert.id directly
+                    timestamp: new Date().toISOString()
+                };
+
+                // Add to our collection of new messages
+                newMessages.push(newMessage);
+
+            } catch (error) {
+                console.error(`Error generating response for ${expert.name}:`, error);
+
+                // Return a fallback response instead of throwing
+                const errorMessage: Message = {
+                    id: uuidv4(),
+                    role: 'assistant',
+                    content: `I apologize, but there was an error generating my response as ${expert.name}. ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    speaker: expert.name,
+                    // Remove speakerId as it's not in the Message type
+                    timestamp: new Date().toISOString()
+                };
+
+                // Add error message to our collection
+                newMessages.push(errorMessage);
             }
+        }));
 
-            // Add responses to the message state
-            responses.forEach(respData => {
-                if (respData && respData.response) {
-                    console.log(`Adding message from ${respData.expertName}: ${respData.response.substring(0, 50)}...`);
+        // Only update the messages state if we have new messages
+        if (newMessages.length > 0) {
+            console.log('Adding new messages to state:', newMessages);
 
-                    // Add message to the state
-                    setMessages(prevMessages => [
-                        ...prevMessages,
-                        {
-                            id: uuidv4(),
-                            role: 'assistant',
-                            content: respData.response,
-                            speaker: respData.expertName,
-                            speakerId: respData.expertId,
-                            timestamp: new Date().toISOString()
-                        }
-                    ]);
-                }
-            });
+            // Add all the new messages to the current messages
+            const updatedMessages = [...currentMessages, ...newMessages];
 
-            // Update state to show success
-            updateStepState('responseGeneration', 'success', 'Expert responses generated!');
-            setTimeout(() => updateStepState('responseGeneration', 'idle'), 2000);
+            // Update the store with all messages at once
+            setMessages(updatedMessages);
 
-            return responses;
-        } catch (error) {
-            console.error('Error in generateLocalExpertResponses:', error);
-            updateStepState('responseGeneration', 'error', 'Failed to generate expert responses');
-            throw error;
+            // If voice synthesis is enabled, generate voices
+            if (useVoiceSynthesis) {
+                await handleVoiceSynthesis(newMessages, currentExperts);
+            }
         }
-    }, [topic, updateStepState, setMessages]);
+    };
 
     // Handle expert type selection
     const handleExpertTypeSelect = async (type: 'historical' | 'ai') => {
@@ -1022,17 +957,25 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 id: `msg_user_${Date.now()}`,
                 role: 'user',
                 content: text,
-                speaker: 'You'
+                speaker: 'You',
+                timestamp: new Date().toISOString()
             };
 
+            // Get current messages
+            const currentMessages = [...messages];
+
             // Add user message to the messages array
-            addMessage(userMessage);
+            const updatedMessages = [...currentMessages, userMessage];
+
+            // Set messages with user message included
+            setMessages(updatedMessages);
+
             setIsGenerating(true);
             updateStepState('responseGeneration', 'loading', 'Generating responses...');
 
             try {
                 // Use our local function to generate expert responses
-                await generateLocalExpertResponses(experts, [...messages, userMessage]);
+                await generateLocalExpertResponses(experts, updatedMessages);
 
                 updateStepState('responseGeneration', 'success', 'Responses generated!');
                 setTimeout(() => updateStepState('responseGeneration', 'idle'), 2000);
