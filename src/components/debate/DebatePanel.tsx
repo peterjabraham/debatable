@@ -987,22 +987,21 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 };
             }));
 
-            // Now add the responses to the message list
-            responses.forEach(resp => {
-                const newMessage = {
-                    id: uuidv4(),
-                    timestamp: new Date().toISOString(),
-                    role: 'assistant' as const,
-                    content: resp.response,
-                    speaker: resp.expertName,
-                    speakerId: resp.expertId
-                };
+            // Create an array of message objects first
+            const newMessages = responses.map(resp => ({
+                id: uuidv4(),
+                timestamp: new Date().toISOString(),
+                role: 'assistant' as const,
+                content: resp.response,
+                speaker: resp.expertName,
+                speakerId: resp.expertId
+            }));
 
-                console.log('Adding message to state:', newMessage);
+            // Log the messages we're about to add
+            console.log('Adding messages to state:', newMessages);
 
-                // Add to messages state
-                setMessages(prev => [...prev, newMessage]);
-            });
+            // Then set them all at once instead of in a forEach loop
+            setMessages(newMessages);
 
             updateStepState('responseGeneration', 'success', 'Discussion started!');
 
