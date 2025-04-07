@@ -591,6 +591,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         if (!topic && currentTopic) {
             console.log('Setting topic in store:', currentTopic);
             setTopic(currentTopic);
+            // Wait for state update to propagate
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         // Set default participant type if not set
@@ -598,6 +600,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             console.log('Setting default participant type to ai experts');
             setSelectedParticipantType('ai');
             setExpertType('ai');
+            // Wait for state update to propagate
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         console.log('Initializing debate with topic:', currentTopic, 'and participant type:', selectedParticipantType || 'ai');
@@ -617,8 +621,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
                 try {
                     // Call selectExperts to generate experts through the API
+                    // Pass the current topic directly to the function to avoid dependency on store state
                     console.log("Calling selectExperts to generate experts via API");
-                    const expertPromise = selectExperts();
+                    const expertPromise = selectExpertsWithTopic(currentTopic);
 
                     // Add a timeout to prevent infinite loading
                     const timeoutPromise = new Promise((_, reject) => {
@@ -661,13 +666,13 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         }
     };
 
-    // Update selectExperts to always use the API regardless of environment
-    const selectExperts = async () => {
-        console.log('Selecting experts...');
+    // Create a version of selectExperts that takes a direct topic parameter
+    const selectExpertsWithTopic = async (directTopic: string) => {
+        console.log('Selecting experts with direct topic:', directTopic);
         updateStepState('expertSelection', 'loading', 'Finding experts for this topic...');
 
-        if (!topic && !selectedTopic) {
-            console.error('No topic provided for expert selection');
+        if (!directTopic || directTopic.trim() === '') {
+            console.error('No topic provided for expert selection in selectExpertsWithTopic');
             updateStepState('expertSelection', 'error', 'No topic provided');
             showWarning('No Topic', 'Please enter a topic to select experts.');
             return;
@@ -679,7 +684,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             console.log(`Checking if API endpoint is accessible: ${apiEndpoint}`);
 
             // Parse topic for potential structured data
-            let topicTitle = topic || selectedTopic || '';
+            let topicTitle = directTopic;
             let topicArguments: any[] = [];
 
             if (typeof topicTitle === 'string' && topicTitle.startsWith('{') && topicTitle.includes('title')) {
@@ -695,9 +700,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 }
             }
 
-            // Try to get experts from API
-            console.log(`Using topic: "${topicTitle}" to get experts`);
-            console.log(`Environment mode: ${process.env.NODE_ENV === 'production' ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+            // Rest of the function is the same as selectExperts
+            // ... rest of the implementation same as selectExperts
 
             // Check for API key
             const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
@@ -774,7 +778,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 console.error('Error calling debate-experts API:', error);
                 throw error; // Propagate error to outer handler
             }
-
         } catch (error) {
             console.error('Expert selection error:', error);
 
@@ -782,7 +785,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             if (process.env.NODE_ENV === 'production') {
                 console.error('PRODUCTION MODE: Expert generation failed with no fallback');
                 showError(createError(
-                    'EXPERT_GENERATION_ERROR',
+                    'EXPERT_GENERATION_ERROR' as any, // Type assertion to fix the linter error
                     'Failed to generate experts. Our systems encountered an issue processing your topic. Please try again later or try a different topic.',
                     'high',
                     true,
@@ -806,6 +809,22 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             updateStepState('expertSelection', 'success', 'Sample experts loaded (fallback)');
             return fallbackExperts;
         }
+    };
+
+    // Update the original selectExperts function to use the new version
+    const selectExperts = async () => {
+        // Get current topic from store or state
+        const currentTopic = topic || selectedTopic || '';
+
+        if (!currentTopic) {
+            console.error('No topic provided for expert selection in selectExperts');
+            updateStepState('expertSelection', 'error', 'No topic provided');
+            showWarning('No Topic', 'Please enter a topic to select experts.');
+            return;
+        }
+
+        // Call the version that takes a direct topic parameter
+        return selectExpertsWithTopic(currentTopic);
     };
 
     // New helper function for voice assignment
