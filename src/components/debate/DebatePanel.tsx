@@ -720,8 +720,46 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 '/api/openai/generate-experts'
             ];
 
+            // Function to check if an API endpoint is accessible
+            const testApiEndpoint = async (endpoint: string): Promise<boolean> => {
+                try {
+                    console.log(`Testing API endpoint availability: ${endpoint}`);
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout for test
+
+                    const response = await fetch(`${endpoint}`, {
+                        method: 'GET',
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+                    console.log(`Endpoint ${endpoint} test result: ${response.status}`);
+                    return response.ok;
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    console.warn(`Endpoint ${endpoint} test failed:`, errorMessage);
+                    return false;
+                }
+            };
+
+            // Check if at least one API endpoint is available
+            let apiAvailable = false;
+            for (const endpoint of apiEndpoints) {
+                apiAvailable = await testApiEndpoint(endpoint);
+                if (apiAvailable) {
+                    console.log(`Found available API endpoint: ${endpoint}`);
+                    break;
+                }
+            }
+
+            if (!apiAvailable && process.env.NODE_ENV === 'production') {
+                console.error('No API endpoints are available');
+                throw new Error('API services are currently unavailable. Please try again later.');
+            }
+
             let apiSuccess = false;
             let selectedExperts = [];
+            let lastError = null;
 
             // Try each endpoint until one succeeds, with timeout
             for (const endpoint of apiEndpoints) {
@@ -783,6 +821,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                         } catch (parseError) {
                             console.error(`Error parsing API response from ${endpoint}:`, parseError);
                             console.error('Raw response that failed to parse:', rawText);
+                            lastError = new Error(`Parse error: ${parseError.message}`);
                         }
                     } else {
                         console.warn(`API returned error status: ${response.status}`);
@@ -790,12 +829,15 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                         try {
                             const errorText = await response.text();
                             console.warn(`API error details from ${endpoint}:`, errorText);
+                            lastError = new Error(`HTTP ${response.status}: ${errorText}`);
                         } catch (err) {
                             console.warn('Could not read error response');
+                            lastError = new Error(`HTTP ${response.status}`);
                         }
                     }
                 } catch (endpointError) {
                     console.error(`Error with endpoint ${endpoint}:`, endpointError);
+                    lastError = endpointError;
                     // Continue to next endpoint
                 }
             }
@@ -2051,8 +2093,45 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                                     '/api/openai/generate-experts'
                                                                 ];
 
+                                                                // Function to check if an API endpoint is accessible (same as above)
+                                                                const testApiEndpoint = async (endpoint: string): Promise<boolean> => {
+                                                                    try {
+                                                                        console.log(`Retry: Testing API endpoint availability: ${endpoint}`);
+                                                                        const controller = new AbortController();
+                                                                        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                                                                        const response = await fetch(`${endpoint}`, {
+                                                                            method: 'GET',
+                                                                            signal: controller.signal
+                                                                        });
+
+                                                                        clearTimeout(timeoutId);
+                                                                        console.log(`Retry: Endpoint ${endpoint} test result: ${response.status}`);
+                                                                        return response.ok;
+                                                                    } catch (error) {
+                                                                        console.warn(`Retry: Endpoint ${endpoint} test failed:`, error);
+                                                                        return false;
+                                                                    }
+                                                                };
+
+                                                                // Check API availability
+                                                                let apiAvailable = false;
+                                                                for (const endpoint of apiEndpoints) {
+                                                                    apiAvailable = await testApiEndpoint(endpoint);
+                                                                    if (apiAvailable) {
+                                                                        console.log(`Retry: Found available API endpoint: ${endpoint}`);
+                                                                        break;
+                                                                    }
+                                                                }
+
+                                                                if (!apiAvailable) {
+                                                                    console.error('Retry: No API endpoints are available');
+                                                                    throw new Error('API services are currently unavailable. Please try again later.');
+                                                                }
+
                                                                 let apiSuccess = false;
                                                                 let selectedExperts = [];
+                                                                let lastError = null;
 
                                                                 // Try each endpoint
                                                                 for (const endpoint of apiEndpoints) {
@@ -2109,18 +2188,22 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                                             } catch (parseError) {
                                                                                 console.error(`Retry: Error parsing API response from ${endpoint}:`, parseError);
                                                                                 console.error('Retry: Raw response that failed to parse:', rawText);
+                                                                                lastError = new Error(`Parse error: ${parseError.message}`);
                                                                             }
                                                                         } else {
                                                                             console.warn(`Retry: API returned error status: ${response.status}`);
                                                                             try {
                                                                                 const errorText = await response.text();
                                                                                 console.warn(`Retry: API error details from ${endpoint}:`, errorText);
+                                                                                lastError = new Error(`HTTP ${response.status}: ${errorText}`);
                                                                             } catch (err) {
                                                                                 console.warn('Retry: Could not read error response');
+                                                                                lastError = new Error(`HTTP ${response.status}`);
                                                                             }
                                                                         }
                                                                     } catch (endpointError) {
                                                                         console.error(`Retry: Error with endpoint ${endpoint}:`, endpointError);
+                                                                        lastError = endpointError;
                                                                     }
                                                                 }
 
@@ -2134,10 +2217,12 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                                     return;
                                                                 }
 
-                                                                // If all API endpoints failed in production, show a clear error
+                                                                // If all API endpoints failed in production, show a clear error with the last error we encountered
                                                                 console.error('Retry: All API endpoints failed to generate experts');
-                                                                throw new Error('All API endpoints failed to generate experts');
-
+                                                                const errorMessage = lastError instanceof Error
+                                                                    ? lastError.message
+                                                                    : String(lastError);
+                                                                throw new Error(`All API endpoints failed to generate experts: ${errorMessage}`);
                                                             } catch (error) {
                                                                 console.error('Retry: Error generating experts:', error);
                                                                 updateStepState('expertLoading', 'error', 'Failed to generate experts');
