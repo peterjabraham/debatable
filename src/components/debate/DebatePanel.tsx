@@ -2077,10 +2077,10 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
                                                     // API endpoints to test
                                                     const apiEndpoints = [
+                                                        '/api/debate-experts',
+                                                        '/api/test-openai-real',
                                                         '/api/debate',
-                                                        '/api/debate/experts',
-                                                        '/api/experts',
-                                                        '/api/openai/generate-experts'
+                                                        '/api/debate/experts'
                                                     ];
 
                                                     // Define the results interface
@@ -2104,13 +2104,61 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                             const controller = new AbortController();
                                                             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
 
-                                                            const requestBody = {
-                                                                action: 'select-experts',
-                                                                topic: topicTitle,
-                                                                expertType: expertType || 'ai',
-                                                                count: 2,
-                                                                arguments: topicArguments
-                                                            };
+                                                            // Create appropriate request body for each endpoint
+                                                            let requestBody;
+
+                                                            if (endpoint === '/api/debate') {
+                                                                requestBody = {
+                                                                    topic: topicTitle,
+                                                                    expert: {
+                                                                        name: "Test Expert",
+                                                                        stance: "pro",
+                                                                        background: "Testing API connectivity",
+                                                                        expertise: ["API Testing"]
+                                                                    }
+                                                                };
+                                                            } else if (endpoint === '/api/test-openai-real') {
+                                                                // This is a GET endpoint, so we'll use fetch with GET method
+                                                                clearTimeout(timeoutId);
+                                                                const response = await fetch(endpoint, {
+                                                                    method: 'GET',
+                                                                    signal: controller.signal
+                                                                });
+
+                                                                const responseText = await response.text();
+                                                                console.log(`Raw response from ${endpoint} (first 100 chars):`, responseText.substring(0, 100) + '...');
+
+                                                                results[endpoint].status = `HTTP ${response.status}`;
+                                                                if (response.ok) {
+                                                                    try {
+                                                                        const data = JSON.parse(responseText);
+                                                                        results[endpoint].response = `Success: OpenAI API ${data.success ? 'is working' : 'failed'}`;
+                                                                        results[endpoint].data = data;
+                                                                    } catch (parseError) {
+                                                                        results[endpoint].error = `Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+                                                                    }
+                                                                } else {
+                                                                    results[endpoint].error = responseText.substring(0, 200);
+                                                                }
+
+                                                                continue; // Skip the rest of the loop for this endpoint
+                                                            } else if (endpoint === '/api/debate-experts') {
+                                                                requestBody = {
+                                                                    action: 'select-experts',
+                                                                    topic: topicTitle,
+                                                                    expertType: expertType || 'ai',
+                                                                    count: 2
+                                                                };
+                                                            } else {
+                                                                // Default for other endpoints
+                                                                requestBody = {
+                                                                    action: 'select-experts',
+                                                                    topic: topicTitle,
+                                                                    expertType: expertType || 'ai',
+                                                                    count: 2,
+                                                                    arguments: topicArguments
+                                                                };
+                                                            }
 
                                                             console.log(`Request body for ${endpoint}:`, JSON.stringify(requestBody));
 
@@ -2137,7 +2185,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                                     const data = JSON.parse(responseText);
                                                                     results[endpoint].response = `Success: ${data.experts ? data.experts.length + ' experts' : 'No experts'} returned`;
                                                                     results[endpoint].data = data;
-                                                                } catch (parseError) {
+                                                                } catch (parseError: unknown) {
                                                                     console.error(`Error parsing response from ${endpoint}:`, parseError);
                                                                     results[endpoint].error = `Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
                                                                     results[endpoint].rawResponse = responseText.substring(0, 200) + '...';
@@ -2147,11 +2195,11 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                                     const errorText = await response.text();
                                                                     console.warn(`API error details from ${endpoint}:`, errorText);
                                                                     results[endpoint].error = errorText.substring(0, 200) + '...';
-                                                                } catch (err) {
+                                                                } catch (err: unknown) {
                                                                     results[endpoint].error = `Could not read error response: ${err instanceof Error ? err.message : String(err)}`;
                                                                 }
                                                             }
-                                                        } catch (endpointError) {
+                                                        } catch (endpointError: unknown) {
                                                             console.error(`Error with endpoint ${endpoint}:`, endpointError);
                                                             results[endpoint].status = 'Failed';
                                                             results[endpoint].error = endpointError instanceof Error ? endpointError.message : String(endpointError);
