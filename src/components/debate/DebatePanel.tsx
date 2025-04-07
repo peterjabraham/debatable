@@ -327,6 +327,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 ? currentMessages[currentMessages.length - 1].content
                 : '';
 
+            console.log(`Starting response generation for ${currentExperts.length} experts`);
+
             // Since we're in a client component, use the API route
             const responses = await Promise.all(currentExperts.map(async (expert, index) => {
                 try {
@@ -347,6 +349,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                             console.error('Failed to parse topic data:', e);
                         }
                     }
+
+                    console.log(`Sending API request for expert: ${expert.name}`);
 
                     // Use Next.js API route to get the OpenAI response
                     const response = await fetch('/api/debate/response', {
@@ -369,10 +373,28 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                     });
 
                     if (!response.ok) {
-                        throw new Error(`API request failed with status ${response.status}`);
+                        const errorData = await response.json().catch(() => ({}));
+                        console.error(`API error (${response.status}):`, errorData);
+                        throw new Error(`API request failed with status ${response.status}: ${errorData.error || 'Unknown error'}`);
                     }
 
                     const data = await response.json();
+                    console.log(`Response received for ${expert.name}:`, data);
+
+                    if (!data.response && !data.content) {
+                        console.warn(`No response content received for ${expert.name}`);
+                        return {
+                            response: `I apologize, but I couldn't generate a response as ${expert.name}. Please try again.`,
+                            usage: {
+                                tokens: 0,
+                                promptTokens: 0,
+                                completionTokens: 0,
+                                cost: 0
+                            },
+                            expertName: expert.name,
+                            expertId: expert.id
+                        };
+                    }
 
                     return {
                         response: data.response || data.content,
@@ -386,21 +408,15 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                         expertId: expert.id
                     };
                 } catch (error) {
-                    console.error(`Error generating response for expert ${expert.name}:`, error);
-
-                    // Fallback to a simulated response in case of API error
-                    const currentTopicTitle = getTopicTitle();
-                    const simulatedResponse = expert.stance === 'pro'
-                        ? `As someone who supports action on ${currentTopicTitle}, I believe we need to take this issue seriously. ${expert.perspective || 'This is an important matter to address.'}`
-                        : `I have reservations about some aspects of ${currentTopicTitle}. ${expert.perspective || 'We should carefully consider all implications.'}`;
-
+                    console.error(`Error generating response for ${expert.name}:`, error);
+                    // Return a fallback response instead of throwing
                     return {
-                        response: simulatedResponse,
+                        response: `I apologize, but there was an error generating my response as ${expert.name}. ${error.message || ''}`,
                         usage: {
-                            tokens: 250,
-                            promptTokens: 100,
-                            completionTokens: 150,
-                            cost: 0.002
+                            tokens: 0,
+                            promptTokens: 0,
+                            completionTokens: 0,
+                            cost: 0
                         },
                         expertName: expert.name,
                         expertId: expert.id
@@ -408,41 +424,44 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 }
             }));
 
-            // Add to store
-            for (const { response, usage, expertName, expertId } of responses) {
-                const messageId = `msg_${Date.now()}_${expertId}`;
-                const newMessage = {
-                    id: messageId,
-                    role: 'assistant' as const,
-                    content: response,
-                    speaker: expertName,
-                    usage
-                };
+            console.log('All responses generated:', responses);
 
-                addMessage(newMessage);
-                useDebateStore.getState().processCitationsInMessage(messageId);
+            // Check if we received any valid responses
+            if (responses.length === 0) {
+                throw new Error('No responses were generated');
             }
 
-            // Process response for voice synthesis if enabled
-            if (useVoiceSynthesis) {
-                await handleVoiceSynthesis(responses, currentExperts);
-            }
+            // Add responses to the message state
+            responses.forEach(respData => {
+                if (respData && respData.response) {
+                    console.log(`Adding message from ${respData.expertName}: ${respData.response.substring(0, 50)}...`);
 
-            updateStepState('responseGeneration', 'success', 'Responses generated successfully!');
+                    // Add message to the state
+                    setMessages(prevMessages => [
+                        ...prevMessages,
+                        {
+                            id: uuidv4(),
+                            role: 'assistant',
+                            content: respData.response,
+                            speaker: respData.expertName,
+                            speakerId: respData.expertId,
+                            timestamp: new Date().toISOString()
+                        }
+                    ]);
+                }
+            });
+
+            // Update state to show success
+            updateStepState('responseGeneration', 'success', 'Expert responses generated!');
+            setTimeout(() => updateStepState('responseGeneration', 'idle'), 2000);
+
             return responses;
         } catch (error) {
-            const appError = createError(
-                'RESPONSE_GENERATION_ERROR',
-                'Failed to generate expert responses',
-                'medium',
-                true,
-                { error: error instanceof Error ? error.message : String(error) }
-            );
-            handleError(appError);
-            updateStepState('responseGeneration', 'error', 'Failed to generate responses');
-            return [];
+            console.error('Error in generateLocalExpertResponses:', error);
+            updateStepState('responseGeneration', 'error', 'Failed to generate expert responses');
+            throw error;
         }
-    }, [topic, addMessage, handleError, updateStepState, useVoiceSynthesis, getTopicTitle]);
+    }, [topic, updateStepState, setMessages]);
 
     // Handle expert type selection
     const handleExpertTypeSelect = async (type: 'historical' | 'ai') => {
@@ -497,28 +516,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             setExpertType('ai');
         }
 
-        // Only use mock experts in development mode, not production
-        const isProduction = process.env.NODE_ENV === 'production';
-        if (!isProduction && process.env.USE_MOCK_DATA !== 'false') {
-            // DEVELOPMENT ONLY: Force experts to load immediately with mock data
-            // This bypasses all API calls and ensures experts always appear in development
-            console.log('DEV MODE: Force loading mock experts on topic selection');
-            const currentExpertType = expertType || selectedParticipantType || 'ai';
-
-            // Get the appropriate mock experts based on the selected type
-            const filteredMockExperts = mockExperts
-                .filter((expert: Expert) => expert.type === (currentExpertType))
-                .slice(0, 2); // Take the first two (one pro, one con)
-
-            console.log('Loading mock experts:', filteredMockExperts);
-
-            // Set the experts in the store
-            setExperts(filteredMockExperts);
-            setExpertsSelected(true);
-            showInfo('Sample Experts Loaded (DEV MODE)', 'Using mock experts for this debate session');
-        } else {
-            console.log('PRODUCTION MODE: Will use API to generate real experts');
-        }
+        // Always use real API to generate experts regardless of environment
+        console.log('Will use API to generate real experts based on topic:', topicTitle);
 
         // Ensure expert selection is shown after topic is selected
         setShowExpertSelection(true);
@@ -557,16 +556,16 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             // Initialize directly with the generated debateId
             initializeDebate(newDebateId, currentTopic);
             updateStepState('topicInitialization', 'success', 'Debate initialized!');
-            showSuccess('Debate Initialized', 'Experts are ready');
+            showSuccess('Debate Initialized', 'Generating expert profiles...');
 
-            // If no experts are loaded, force expert generation regardless of environment
+            // If no experts are loaded, force expert generation
             if (experts.length === 0) {
                 console.log("No experts found, generating experts for topic:", currentTopic);
                 setExpertsLoading(true);
 
                 try {
-                    // Always try to select experts via API first with timeout
-                    console.log("Calling selectExperts to generate experts");
+                    // Call selectExperts to generate experts through the API
+                    console.log("Calling selectExperts to generate experts via API");
                     const expertPromise = selectExperts();
 
                     // Add a timeout to prevent infinite loading
@@ -579,41 +578,12 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                     // Double-check that experts were loaded after API call completed
                     if (experts.length === 0) {
                         console.log("API call completed but no experts were loaded");
-
-                        // Only use fallbacks in development mode
-                        if (process.env.NODE_ENV !== 'production') {
-                            console.log("Using fallback experts in development mode");
-                            const currentExpertType = expertType || selectedParticipantType || 'ai';
-                            const filteredMockExperts = mockExperts
-                                .filter((expert: Expert) => expert.type === currentExpertType)
-                                .slice(0, 2);
-
-                            setExperts(filteredMockExperts);
-                            setExpertsSelected(true);
-                            showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
-                        } else {
-                            // In production mode, show a clear error
-                            console.warn("Failed to generate experts in production mode");
-                            showWarning('Expert Generation Failed', 'Please try again or try a different topic');
-                        }
+                        // Show error since we don't want to use mock experts
+                        showWarning('Expert Generation Failed', 'Please try again or try a different topic');
                     }
                 } catch (expertError) {
                     console.error("Error generating experts:", expertError);
-
-                    // Only use fallbacks in development mode
-                    if (process.env.NODE_ENV !== 'production') {
-                        const currentExpertType = expertType || selectedParticipantType || 'ai';
-                        const filteredMockExperts = mockExperts
-                            .filter((expert: Expert) => expert.type === currentExpertType)
-                            .slice(0, 2);
-
-                        setExperts(filteredMockExperts);
-                        setExpertsSelected(true);
-                        showInfo('Using Sample Experts', 'Mock experts are being used in development mode');
-                    } else {
-                        // In production, show an error message
-                        showWarning('Expert Generation Failed', 'Please try again with a different topic');
-                    }
+                    showWarning('Expert Generation Failed', 'Please try again with a different topic');
                 } finally {
                     // Ensure loading state is always cleared
                     setExpertsLoading(false);
@@ -639,7 +609,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         }
     };
 
-    // Update selectExperts to use the selected participant type
+    // Update selectExperts to always use the API regardless of environment
     const selectExperts = async () => {
         console.log('### DEBUG: selectExperts called ###');
         console.log('- Topic:', topic);
@@ -682,106 +652,104 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             // Continue with topic as plain text
         }
 
-        updateStepState('expertLoading', 'loading', 'Selecting experts...');
+        updateStepState('expertLoading', 'loading', 'Generating expert profiles...');
         setIsLoading(true);
         setExpertsLoading(true);
         clearError();
 
         try {
-            // Check if we're in production mode - if so, make real API calls
-            const isProduction = process.env.NODE_ENV === 'production';
+            console.log('Generating expert profiles via API for topic:', topicTitle);
 
-            if (isProduction) {
-                console.log('PRODUCTION MODE: Using real API to generate experts');
+            // API endpoints to try in order of preference
+            const apiEndpoints = [
+                '/api/debate',
+                '/api/debate/experts',
+                '/api/experts',
+                '/api/openai/generate-experts'
+            ];
 
-                // API endpoints to try in order of preference
-                const apiEndpoints = [
-                    '/api/debate',
-                    '/api/debate/experts',
-                    '/api/experts',
-                    '/api/openai/generate-experts'
-                ];
+            let apiSuccess = false;
+            let selectedExperts = [];
 
-                let apiSuccess = false;
-                let selectedExperts = [];
+            // Try each endpoint until one succeeds, with timeout
+            for (const endpoint of apiEndpoints) {
+                if (apiSuccess) break;
 
-                // Try each endpoint until one succeeds, with timeout
-                for (const endpoint of apiEndpoints) {
-                    if (apiSuccess) break;
+                try {
+                    console.log(`Attempting to select experts via ${endpoint}...`);
 
-                    try {
-                        console.log(`Attempting to select experts via ${endpoint}...`);
+                    // Add timeout to prevent infinite waiting for response
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
 
-                        // Add timeout to prevent infinite waiting for response
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
+                    // Get API key from environment
+                    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 
-                        // Get API key from environment
-                        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+                    console.log(`Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
 
-                        console.log(`Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
+                    const requestBody = {
+                        action: 'select-experts',
+                        topic: topicTitle,
+                        expertType: expertType || 'ai',
+                        count: 2,
+                        arguments: topicArguments
+                    };
 
-                        const requestBody = {
-                            action: 'select-experts',
-                            topic: topicTitle,
-                            expertType: expertType || 'ai',
-                            count: 2,
-                            arguments: topicArguments
-                        };
+                    console.log(`Request body for ${endpoint}:`, JSON.stringify(requestBody));
 
-                        console.log(`Request body for ${endpoint}:`, JSON.stringify(requestBody));
+                    const response = await fetch(`${endpoint}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify(requestBody),
+                        signal: controller.signal
+                    });
 
-                        const response = await fetch(`${endpoint}`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${apiKey}`
-                            },
-                            body: JSON.stringify(requestBody),
-                            signal: controller.signal
-                        });
+                    clearTimeout(timeoutId);
 
-                        clearTimeout(timeoutId);
+                    console.log(`Response status from ${endpoint}: ${response.status}`);
 
-                        console.log(`Response status from ${endpoint}: ${response.status}`);
+                    if (response.ok) {
+                        let rawText = '';
+                        try {
+                            rawText = await response.text();
+                            console.log(`Raw response from ${endpoint}:`, rawText.substring(0, 200) + '...');
+                            const data = JSON.parse(rawText);
 
-                        if (response.ok) {
-                            let rawText = '';
-                            try {
-                                rawText = await response.text();
-                                console.log(`Raw response from ${endpoint}:`, rawText.substring(0, 200) + '...');
-                                const data = JSON.parse(rawText);
+                            console.log(`Parsed data from ${endpoint}:`, data);
 
-                                console.log(`Parsed data from ${endpoint}:`, data);
-
-                                if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
-                                    console.log('Successfully selected experts from API:', data.experts);
-                                    selectedExperts = data.experts;
-                                    apiSuccess = true;
-                                    break;
-                                } else {
-                                    console.warn('API returned valid response but no experts:', data);
-                                }
-                            } catch (parseError) {
-                                console.error(`Error parsing API response from ${endpoint}:`, parseError);
-                                console.error('Raw response that failed to parse:', rawText);
+                            if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                                console.log('Successfully selected experts from API:', data.experts);
+                                selectedExperts = data.experts;
+                                apiSuccess = true;
+                                break;
+                            } else {
+                                console.warn('API returned valid response but no experts:', data);
                             }
-                        } else {
-                            console.warn(`API returned error status: ${response.status}`);
-                            // Try to get error details
-                            try {
-                                const errorText = await response.text();
-                                console.warn(`API error details from ${endpoint}:`, errorText);
-                            } catch (err) {
-                                console.warn('Could not read error response');
-                            }
+                        } catch (parseError) {
+                            console.error(`Error parsing API response from ${endpoint}:`, parseError);
+                            console.error('Raw response that failed to parse:', rawText);
                         }
-                    } catch (endpointError) {
-                        console.error(`Error with endpoint ${endpoint}:`, endpointError);
-                        // Continue to next endpoint
+                    } else {
+                        console.warn(`API returned error status: ${response.status}`);
+                        // Try to get error details
+                        try {
+                            const errorText = await response.text();
+                            console.warn(`API error details from ${endpoint}:`, errorText);
+                        } catch (err) {
+                            console.warn('Could not read error response');
+                        }
                     }
+                } catch (endpointError) {
+                    console.error(`Error with endpoint ${endpoint}:`, endpointError);
+                    // Continue to next endpoint
                 }
+            }
 
+            if (apiSuccess && selectedExperts.length > 0) {
+                // Use the experts from the API
                 if (apiSuccess && selectedExperts.length > 0) {
                     // Use the experts from the API
                     setExperts(selectedExperts);
@@ -1011,18 +979,70 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         setIsGenerating(true);
         updateStepState('responseGeneration', 'loading', 'Generating initial responses...');
 
+        console.log('Starting discussion with experts:', experts);
+
         try {
             // Get the current topic
             const currentTopic = topic || selectedTopic || 'General debate';
+            console.log('Using topic for debate:', currentTopic);
 
-            // Use our local function to generate expert responses
-            await generateLocalExpertResponses(experts, []);
+            // Create a direct fetch request to the API
+            const responses = await Promise.all(experts.map(async (expert) => {
+                console.log(`Generating response for ${expert.name}`);
+
+                const response = await fetch('/api/debate/response', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        expert,
+                        messages: [{
+                            role: 'user',
+                            content: `The topic is: ${currentTopic}. Please provide your initial thoughts.`
+                        }],
+                        topic: currentTopic
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`API error for ${expert.name}:`, response.status, errorText);
+                    throw new Error(`API request failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log(`Response for ${expert.name}:`, data);
+
+                return {
+                    expertName: expert.name,
+                    expertId: expert.id,
+                    response: data.response || "No response received"
+                };
+            }));
+
+            // Now add the responses to the message list
+            responses.forEach(resp => {
+                const newMessage = {
+                    id: uuidv4(),
+                    timestamp: new Date().toISOString(),
+                    role: 'assistant' as const,
+                    content: resp.response,
+                    speaker: resp.expertName,
+                    speakerId: resp.expertId
+                };
+
+                console.log('Adding message to state:', newMessage);
+
+                // Add to messages state
+                setMessages(prev => [...prev, newMessage]);
+            });
 
             updateStepState('responseGeneration', 'success', 'Discussion started!');
-            setTimeout(() => updateStepState('responseGeneration', 'idle'), 2000);
-        } catch (error) {
+
+        } catch (error: any) {
             console.error('Error starting discussion:', error);
-            setErrorMessage('Failed to start the discussion');
+            setErrorMessage(`Failed to start the discussion: ${error?.message || 'Unknown error'}`);
             updateStepState('responseGeneration', 'error', 'Failed to start the discussion');
         } finally {
             setIsGenerating(false);
@@ -1079,42 +1099,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         console.log('Expert state change detected');
         debugTest.testExpertLoading(experts, expertsLoading, expertsSelected);
     }, [experts, expertsLoading, expertsSelected]);
-
-    // Force show mock experts if not already present
-    useEffect(() => {
-        // Only use mock experts in development mode, not production
-        const isProduction = process.env.NODE_ENV === 'production';
-
-        // If the user clicks on a debate topic and we're showing the loading spinner but no experts appear
-        if (topic && expertsLoading && !experts.length && !isProduction && process.env.USE_MOCK_DATA !== 'false') {
-            // Set a timeout to ensure we're not still in the process of loading
-            const timer = setTimeout(() => {
-                if (!experts.length) {
-                    console.log('DEV MODE: FORCE LOADING MOCK EXPERTS: Experts not loaded after timeout');
-
-                    // Get the current expert type or default to ai
-                    const currentExpertType = expertType || 'ai';
-
-                    // Filter and select mock experts
-                    const filteredMockExperts = mockExperts
-                        .filter((expert: Expert) => expert.type === currentExpertType)
-                        .slice(0, 2); // Take two experts (one pro, one con)
-
-                    console.log('Setting forced mock experts:', filteredMockExperts);
-
-                    // Update the store with mock experts
-                    setExperts(filteredMockExperts);
-                    setExpertsSelected(true);
-                    setExpertsLoading(false);
-
-                    // Show notification
-                    showInfo('Using Sample Experts (DEV MODE)', 'Mock experts are being displayed for testing');
-                }
-            }, 2000); // Wait 2 seconds before forcing experts to display
-
-            return () => clearTimeout(timer);
-        }
-    }, [topic, expertsLoading, experts.length, expertType, setExperts, setExpertsSelected, setExpertsLoading, showInfo]);
 
     // Handle file upload
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1860,231 +1844,192 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                     {/* Single consolidated loading indicator - no duplicate spinners */}
                                     <div className="flex flex-col items-center justify-center py-8">
                                         <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-                                        {process.env.NODE_ENV === 'production' ? (
-                                            <>
-                                                <p className="text-white text-center">Generating expert profiles based on your topic...</p>
-                                                <p className="text-sm text-muted-foreground mt-2">This may take a moment as we create tailored debate experts.</p>
-                                                {/* Add retry button in production after 15 seconds */}
-                                                <div id="expert-retry-button" className="mt-6 opacity-0" style={{ animation: 'fadeIn 0.5s ease-in forwards 15s' }}>
-                                                    <Button
-                                                        onClick={() => {
-                                                            console.log("Retry button clicked, attempting to regenerate experts");
-                                                            // Reset loading states
+                                        <>
+                                            <p className="text-white text-center">Generating expert profiles based on your topic...</p>
+                                            <p className="text-sm text-muted-foreground mt-2">This may take a moment as we create tailored debate experts.</p>
+                                            {/* Add retry button after 15 seconds */}
+                                            <div id="expert-retry-button" className="mt-6 opacity-0" style={{ animation: 'fadeIn 0.5s ease-in forwards 15s' }}>
+                                                <Button
+                                                    onClick={() => {
+                                                        console.log("Retry button clicked, attempting to regenerate experts");
+                                                        // Reset loading states
+                                                        setExpertsLoading(false);
+                                                        setIsLoading(false);
+                                                        // Reset error states
+                                                        updateStepState('expertLoading', 'idle');
+                                                        clearError();
+
+                                                        // Start fresh expert generation attempt - directly call API
+                                                        console.log("PRODUCTION MODE RETRY: Making direct API call to generate experts");
+                                                        setExpertsLoading(true);
+                                                        setIsLoading(true);
+
+                                                        // Get current topic
+                                                        const currentTopic = topic || selectedTopic;
+
+                                                        if (!currentTopic) {
+                                                            console.warn('Missing topic, cannot select experts');
+                                                            showWarning('Missing Topic', 'Please enter a topic first');
                                                             setExpertsLoading(false);
                                                             setIsLoading(false);
-                                                            // Reset error states
-                                                            updateStepState('expertLoading', 'idle');
-                                                            clearError();
+                                                            return;
+                                                        }
 
-                                                            // Start fresh expert generation attempt - directly call API
-                                                            console.log("PRODUCTION MODE RETRY: Making direct API call to generate experts");
-                                                            setExpertsLoading(true);
-                                                            setIsLoading(true);
+                                                        // Parse topic data
+                                                        let topicTitle = currentTopic;
+                                                        let topicArguments: any[] = [];
 
-                                                            // Get current topic
-                                                            const currentTopic = topic || selectedTopic;
+                                                        try {
+                                                            if (currentTopic.startsWith('{') && currentTopic.includes('title')) {
+                                                                const parsedTopic = JSON.parse(currentTopic);
+                                                                topicTitle = parsedTopic.title;
 
-                                                            if (!currentTopic) {
-                                                                console.warn('Missing topic, cannot select experts');
-                                                                showWarning('Missing Topic', 'Please enter a topic first');
+                                                                if (parsedTopic.data && parsedTopic.data.arguments) {
+                                                                    topicArguments = parsedTopic.data.arguments;
+                                                                }
+                                                            }
+                                                        } catch (e) {
+                                                            console.warn('Failed to parse topic data, using as plain text');
+                                                        }
+
+                                                        updateStepState('expertLoading', 'loading', 'Selecting experts...');
+
+                                                        // Direct API call with a longer timeout
+                                                        (async () => {
+                                                            try {
+                                                                // API endpoints to try in order of preference (same as main function)
+                                                                const apiEndpoints = [
+                                                                    '/api/debate',
+                                                                    '/api/debate/experts',
+                                                                    '/api/experts',
+                                                                    '/api/openai/generate-experts'
+                                                                ];
+
+                                                                let apiSuccess = false;
+                                                                let selectedExperts = [];
+
+                                                                // Try each endpoint
+                                                                for (const endpoint of apiEndpoints) {
+                                                                    if (apiSuccess) break;
+                                                                    console.log(`Retry: Attempting to select experts via ${endpoint}...`);
+
+                                                                    try {
+                                                                        const controller = new AbortController();
+                                                                        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
+
+                                                                        // Get API key from environment
+                                                                        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+                                                                        console.log(`Retry: Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
+
+                                                                        const requestBody = {
+                                                                            action: 'select-experts',
+                                                                            topic: topicTitle,
+                                                                            expertType: expertType || 'ai',
+                                                                            count: 2,
+                                                                            arguments: topicArguments
+                                                                        };
+
+                                                                        console.log(`Retry: Request body for ${endpoint}:`, JSON.stringify(requestBody));
+
+                                                                        const response = await fetch(endpoint, {
+                                                                            method: 'POST',
+                                                                            headers: {
+                                                                                'Content-Type': 'application/json',
+                                                                                'Authorization': `Bearer ${apiKey}`
+                                                                            },
+                                                                            body: JSON.stringify(requestBody),
+                                                                            signal: controller.signal
+                                                                        });
+
+                                                                        clearTimeout(timeoutId);
+                                                                        console.log(`Retry: Response status from ${endpoint}: ${response.status}`);
+
+                                                                        if (response.ok) {
+                                                                            let rawText = '';
+                                                                            try {
+                                                                                rawText = await response.text();
+                                                                                console.log(`Retry: Raw response from ${endpoint}:`, rawText.substring(0, 200) + '...');
+                                                                                const data = JSON.parse(rawText);
+                                                                                console.log(`Retry: Parsed data from ${endpoint}:`, data);
+
+                                                                                if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                                                                                    console.log('Retry: Successfully selected experts from API:', data.experts);
+                                                                                    selectedExperts = data.experts;
+                                                                                    apiSuccess = true;
+                                                                                    break;
+                                                                                } else {
+                                                                                    console.warn('Retry: API returned valid response but no experts:', data);
+                                                                                }
+                                                                            } catch (parseError) {
+                                                                                console.error(`Retry: Error parsing API response from ${endpoint}:`, parseError);
+                                                                                console.error('Retry: Raw response that failed to parse:', rawText);
+                                                                            }
+                                                                        } else {
+                                                                            console.warn(`Retry: API returned error status: ${response.status}`);
+                                                                            try {
+                                                                                const errorText = await response.text();
+                                                                                console.warn(`Retry: API error details from ${endpoint}:`, errorText);
+                                                                            } catch (err) {
+                                                                                console.warn('Retry: Could not read error response');
+                                                                            }
+                                                                        }
+                                                                    } catch (endpointError) {
+                                                                        console.error(`Retry: Error with endpoint ${endpoint}:`, endpointError);
+                                                                    }
+                                                                }
+
+                                                                // If we successfully got experts, use them
+                                                                if (apiSuccess && selectedExperts.length > 0) {
+                                                                    console.log('Retry: Using experts from API:', selectedExperts);
+                                                                    setExperts(selectedExperts);
+                                                                    setExpertsSelected(true);
+                                                                    updateStepState('expertLoading', 'success', 'Experts generated successfully!');
+                                                                    showSuccess('Experts Generated', 'Debate experts have been selected based on your topic');
+                                                                    return;
+                                                                }
+
+                                                                // If all API endpoints failed in production, show a clear error
+                                                                console.error('Retry: All API endpoints failed to generate experts');
+                                                                throw new Error('All API endpoints failed to generate experts');
+
+                                                            } catch (error) {
+                                                                console.error('Retry: Error generating experts:', error);
+                                                                updateStepState('expertLoading', 'error', 'Failed to generate experts');
+                                                                showError(createError(
+                                                                    'API_ERROR',
+                                                                    'Failed to generate experts. Please try again later or try a different topic.',
+                                                                    'medium',
+                                                                    true,
+                                                                    { topic: topicTitle }
+                                                                ));
+                                                            } finally {
                                                                 setExpertsLoading(false);
                                                                 setIsLoading(false);
-                                                                return;
                                                             }
-
-                                                            // Parse topic data
-                                                            let topicTitle = currentTopic;
-                                                            let topicArguments: any[] = [];
-
-                                                            try {
-                                                                if (currentTopic.startsWith('{') && currentTopic.includes('title')) {
-                                                                    const parsedTopic = JSON.parse(currentTopic);
-                                                                    topicTitle = parsedTopic.title;
-
-                                                                    if (parsedTopic.data && parsedTopic.data.arguments) {
-                                                                        topicArguments = parsedTopic.data.arguments;
-                                                                    }
-                                                                }
-                                                            } catch (e) {
-                                                                console.warn('Failed to parse topic data, using as plain text');
-                                                            }
-
-                                                            updateStepState('expertLoading', 'loading', 'Selecting experts...');
-
-                                                            // Direct API call with a longer timeout
-                                                            (async () => {
-                                                                try {
-                                                                    // API endpoints to try in order of preference (same as main function)
-                                                                    const apiEndpoints = [
-                                                                        '/api/debate',
-                                                                        '/api/debate/experts',
-                                                                        '/api/experts',
-                                                                        '/api/openai/generate-experts'
-                                                                    ];
-
-                                                                    let apiSuccess = false;
-                                                                    let selectedExperts = [];
-
-                                                                    // Try each endpoint
-                                                                    for (const endpoint of apiEndpoints) {
-                                                                        if (apiSuccess) break;
-                                                                        console.log(`Retry: Attempting to select experts via ${endpoint}...`);
-
-                                                                        try {
-                                                                            const controller = new AbortController();
-                                                                            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
-
-                                                                            // Get API key from environment
-                                                                            const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
-                                                                            console.log(`Retry: Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
-
-                                                                            const requestBody = {
-                                                                                action: 'select-experts',
-                                                                                topic: topicTitle,
-                                                                                expertType: expertType || 'ai',
-                                                                                count: 2,
-                                                                                arguments: topicArguments
-                                                                            };
-
-                                                                            console.log(`Retry: Request body for ${endpoint}:`, JSON.stringify(requestBody));
-
-                                                                            const response = await fetch(endpoint, {
-                                                                                method: 'POST',
-                                                                                headers: {
-                                                                                    'Content-Type': 'application/json',
-                                                                                    'Authorization': `Bearer ${apiKey}`
-                                                                                },
-                                                                                body: JSON.stringify(requestBody),
-                                                                                signal: controller.signal
-                                                                            });
-
-                                                                            clearTimeout(timeoutId);
-                                                                            console.log(`Retry: Response status from ${endpoint}: ${response.status}`);
-
-                                                                            if (response.ok) {
-                                                                                let rawText = '';
-                                                                                try {
-                                                                                    rawText = await response.text();
-                                                                                    console.log(`Retry: Raw response from ${endpoint}:`, rawText.substring(0, 200) + '...');
-                                                                                    const data = JSON.parse(rawText);
-                                                                                    console.log(`Retry: Parsed data from ${endpoint}:`, data);
-
-                                                                                    if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
-                                                                                        console.log('Retry: Successfully selected experts from API:', data.experts);
-                                                                                        selectedExperts = data.experts;
-                                                                                        apiSuccess = true;
-                                                                                        break;
-                                                                                    } else {
-                                                                                        console.warn('Retry: API returned valid response but no experts:', data);
-                                                                                    }
-                                                                                } catch (parseError) {
-                                                                                    console.error(`Retry: Error parsing API response from ${endpoint}:`, parseError);
-                                                                                    console.error('Retry: Raw response that failed to parse:', rawText);
-                                                                                }
-                                                                            } else {
-                                                                                console.warn(`Retry: API returned error status: ${response.status}`);
-                                                                                try {
-                                                                                    const errorText = await response.text();
-                                                                                    console.warn(`Retry: API error details from ${endpoint}:`, errorText);
-                                                                                } catch (err) {
-                                                                                    console.warn('Retry: Could not read error response');
-                                                                                }
-                                                                            }
-                                                                        } catch (endpointError) {
-                                                                            console.error(`Retry: Error with endpoint ${endpoint}:`, endpointError);
-                                                                        }
-                                                                    }
-
-                                                                    // If we successfully got experts, use them
-                                                                    if (apiSuccess && selectedExperts.length > 0) {
-                                                                        console.log('Retry: Using experts from API:', selectedExperts);
-                                                                        setExperts(selectedExperts);
-                                                                        setExpertsSelected(true);
-                                                                        updateStepState('expertLoading', 'success', 'Experts generated successfully!');
-                                                                        showSuccess('Experts Generated', 'Debate experts have been selected based on your topic');
-                                                                        return;
-                                                                    }
-
-                                                                    // If all API endpoints failed in production, show a clear error
-                                                                    console.error('Retry: All API endpoints failed to generate experts');
-                                                                    throw new Error('All API endpoints failed to generate experts');
-
-                                                                } catch (error) {
-                                                                    console.error('Retry: Error generating experts:', error);
-                                                                    updateStepState('expertLoading', 'error', 'Failed to generate experts');
-                                                                    showError(createError(
-                                                                        'API_ERROR',
-                                                                        'Failed to generate experts. Please try again later or try a different topic.',
-                                                                        'medium',
-                                                                        true,
-                                                                        { topic: topicTitle }
-                                                                    ));
-                                                                } finally {
-                                                                    setExpertsLoading(false);
-                                                                    setIsLoading(false);
-                                                                }
-                                                            })();
-                                                        }}
-                                                        variant="outline"
-                                                        size="sm"
-                                                    >
-                                                        Retry Expert Generation
-                                                    </Button>
-                                                    <p className="text-xs text-muted-foreground mt-2">
-                                                        Having trouble? Try manually refreshing the page or entering a different topic.
-                                                    </p>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <p className="text-white text-center">Loading your experts...</p>
-                                                <p className="text-sm text-yellow-400 mt-2">Using sample experts in development mode.</p>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    {/* Fallback experts in development mode only */}
-                                    {process.env.NODE_ENV !== 'production' && (
-                                        <div className="mt-8 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s ease-in forwards 4s' }}>
-                                            <div className="flex gap-4 overflow-x-auto pb-4 justify-center">
-                                                <div className="rounded-lg overflow-hidden bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800">
-                                                    <ExpertCard key="fallback_pro" expert={{
-                                                        id: 'fallback_pro',
-                                                        name: 'AI Environmental Expert',
-                                                        type: 'ai',
-                                                        background: 'Specializes in environmental science and climate policy analysis',
-                                                        expertise: ['Climate Science', 'Policy Analysis'],
-                                                        stance: 'pro',
-                                                        perspective: 'I support evidence-based solutions to climate challenges.',
-                                                        identifier: 'AI-ENV5432'
-                                                    }} />
-                                                </div>
-                                                <div className="rounded-lg overflow-hidden bg-red-100 dark:bg-red-900/50 border border-red-200 dark:border-red-800">
-                                                    <ExpertCard key="fallback_con" expert={{
-                                                        id: 'fallback_con',
-                                                        name: 'AI Economic Policy Expert',
-                                                        type: 'ai',
-                                                        background: 'Specializes in economic policy and market impact assessment',
-                                                        expertise: ['Economics', 'Policy Analysis'],
-                                                        stance: 'con',
-                                                        perspective: 'I believe we need careful consideration of economic implications.',
-                                                        identifier: 'AI-EPE7891'
-                                                    }} />
-                                                </div>
+                                                        })();
+                                                    }}
+                                                    variant="outline"
+                                                    size="sm"
+                                                >
+                                                    Retry Expert Generation
+                                                </Button>
+                                                <p className="text-xs text-muted-foreground mt-2">
+                                                    Having trouble? Try manually refreshing the page or entering a different topic.
+                                                </p>
                                             </div>
-                                        </div>
-                                    )}
+                                        </>
+                                    </div>
                                 </div>
                             )}
 
                             {/* Step 4: Start Discussion */}
                             {expertsSelected && messages.length === 0 && experts.length > 0 && (
-                                <div className="mt-6 flex justify-center">
+                                <div className="mt-6 flex flex-col items-center justify-center gap-4">
                                     <Button
                                         onClick={startDiscussion}
                                         disabled={isGenerating}
                                         size="lg"
-                                        className="bg-green-600 hover:bg-green-700"
+                                        className="w-full max-w-md"
                                     >
                                         {isGenerating ? (
                                             <>
@@ -2092,9 +2037,55 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                 Starting Discussion...
                                             </>
                                         ) : (
-                                            'Start Discussion'
+                                            'Start Debate on Selected Topic'
                                         )}
                                     </Button>
+
+                                    {/* Debug info in development mode */}
+                                    {process.env.NODE_ENV !== 'production' && (
+                                        <div className="border border-yellow-400 rounded p-2 mt-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 text-sm w-full max-w-md">
+                                            <p className="font-semibold mb-1">Debug Info:</p>
+                                            <ul className="list-disc list-inside space-y-1">
+                                                <li>Experts selected: {experts.length}</li>
+                                                <li>Messages: {messages.length}</li>
+                                                <li>Topic: {topic || 'None'}</li>
+                                                <li>
+                                                    <Button
+                                                        variant="link"
+                                                        size="sm"
+                                                        className="p-0 h-auto text-yellow-600 dark:text-yellow-400 underline"
+                                                        onClick={() => {
+                                                            // Force a direct API call
+                                                            console.log('Testing direct API call');
+                                                            fetch('/api/debate/response', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({
+                                                                    expert: experts[0],
+                                                                    messages: [{
+                                                                        role: 'user',
+                                                                        content: `Test topic: ${topic || 'General debate'}`
+                                                                    }],
+                                                                    topic: topic || 'General debate'
+                                                                })
+                                                            })
+                                                                .then(res => res.json())
+                                                                .then(data => {
+                                                                    console.log('API test response:', data);
+                                                                    alert(`API Response: ${data.response ? 'Success' : 'Failed'}`);
+                                                                })
+                                                                .catch(err => {
+                                                                    console.error('API test error:', err);
+                                                                    alert(`API Error: ${err.message}`);
+                                                                });
+                                                        }}
+                                                    >
+                                                        Test API
+                                                    </Button>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
