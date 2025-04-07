@@ -466,7 +466,12 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
     // Handle expert type selection
     const handleExpertTypeSelect = async (type: 'historical' | 'ai') => {
         console.log(`Expert type selected: ${type}`);
+        // Make sure we update both the store and the local state
         setExpertType(type);
+        setSelectedParticipantType(type);
+
+        // Show a confirmation message
+        showInfo('Expert Type Selected', `${type === 'historical' ? 'Historical Figures' : 'AI Subject Experts'} selected`);
 
         // If we already have a topic, we can re-select experts based on the new type
         if (topic || selectedTopic) {
@@ -1670,7 +1675,10 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
                                 <button
-                                    onClick={() => handleExpertTypeSelect('historical')}
+                                    onClick={() => {
+                                        console.log("Historical Figures button clicked");
+                                        handleExpertTypeSelect('historical');
+                                    }}
                                     className="flex flex-col items-center p-6 rounded-lg border border-gray-600 bg-black hover:bg-gray-900 transition-colors"
                                 >
                                     <div className="w-16 h-16 rounded-full bg-blue-900 flex items-center justify-center mb-4">
@@ -1683,7 +1691,10 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                 </button>
 
                                 <button
-                                    onClick={() => handleExpertTypeSelect('ai')}
+                                    onClick={() => {
+                                        console.log("AI Subject Experts button clicked");
+                                        handleExpertTypeSelect('ai');
+                                    }}
                                     className="flex flex-col items-center p-6 rounded-lg border border-gray-600 bg-black hover:bg-gray-900 transition-colors"
                                 >
                                     <div className="w-16 h-16 rounded-full bg-purple-900 flex items-center justify-center mb-4">
