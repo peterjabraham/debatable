@@ -38,6 +38,26 @@ The Debate-able application is currently in active development. This document pr
 
 ## Recently Fixed Issues
 
+### Expert Generation and API Issues
+- ✅ Fixed expert generation in production mode to properly use the correct API endpoints
+- ✅ Added API endpoint testing functionality to diagnose connectivity issues
+- ✅ Improved error handling during expert generation with descriptive messages
+- ✅ Added fallback mechanism for development mode that uses mock experts
+- ✅ Fixed the `expertsSelected` flag to ensure the Start Debate button appears
+- ✅ Implemented timeout handling for API requests to prevent infinite loading
+
+### Topic Processing Issues
+- ✅ Fixed topic propagation between component state and global store
+- ✅ Enhanced topic selection to ensure data is properly passed to API endpoints
+- ✅ Added robust checks to prevent empty topics from being processed
+- ✅ Fixed topic parsing to handle structured data correctly
+
+### Message Handling Issues
+- ✅ Fixed "messages.map is not a function" error by properly handling message arrays
+- ✅ Corrected the behavior of the `setMessages` store function to accept proper data
+- ✅ Improved response collection pattern for expert messages
+- ✅ Enhanced user message handling for cleaner interaction flow
+
 ### Content Processing Improvements
 - ✅ Enhanced content processing error handling with detailed user feedback
 - ✅ Improved mock API responses with structured topic data

@@ -268,4 +268,239 @@ ELEVENLABS_API_KEY=your_elevenlabs_api_key
 
 ## Related Components
 - [Debate Engine](./Debate-Engine.md)
-- [API Integration](../api/API-Integration.md) 
+- [API Integration](../api/API-Integration.md)
+
+## Expert Selection Process
+
+The expert selection process has been improved to ensure reliable operation in both development and production environments:
+
+```typescript
+// Expert selection with robust error handling
+const selectExpertsWithTopic = async (directTopic: string) => {
+    console.log('Selecting experts with direct topic:', directTopic);
+    updateStepState('expertSelection', 'loading', 'Finding experts for this topic...');
+
+    // Parse topic if it's structured data
+    let topicTitle = directTopic;
+    let topicArguments = [];
+    
+    if (typeof topicTitle === 'string' && topicTitle.startsWith('{') && topicTitle.includes('title')) {
+        try {
+            const parsedTopic = JSON.parse(topicTitle);
+            topicTitle = parsedTopic.title || topicTitle;
+            
+            if (parsedTopic.data && parsedTopic.data.arguments) {
+                topicArguments = parsedTopic.data.arguments;
+            }
+        } catch (e) {
+            console.warn('Failed to parse topic as JSON:', e);
+        }
+    }
+    
+    try {
+        // Use the proper API endpoint
+        const apiEndpoint = '/api/debate-experts';
+        console.log(`Using API endpoint: ${apiEndpoint}`);
+        
+        // API request with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 seconds timeout
+        
+        // Prepare request body with required parameters
+        const requestBody = {
+            action: 'select-experts',
+            topic: topicTitle,
+            expertType: expertType || 'ai',
+            count: 2
+        };
+        
+        console.log('Request body:', JSON.stringify(requestBody));
+        
+        // Make the API request
+        const response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+            const responseText = await response.text();
+            const data = JSON.parse(responseText);
+            
+            if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                console.log(`Received ${data.experts.length} experts from API`);
+                
+                // Format experts properly
+                const formattedExperts = data.experts.map(expert => ({
+                    id: expert.id || uuidv4(),
+                    name: expert.name,
+                    expertise: expert.expertise || [],
+                    stance: expert.stance || 'neutral',
+                    background: expert.background || '',
+                    voiceId: expert.voiceId || undefined
+                }));
+                
+                console.log('Formatted experts:', formattedExperts);
+                setExperts(formattedExperts);
+                setExpertsSelected(true); // Important flag for UI
+                updateStepState('expertSelection', 'success', 'Experts selected successfully');
+                return formattedExperts;
+            } else {
+                console.warn('API response did not contain valid experts:', data);
+                throw new Error('No experts found in API response');
+            }
+        } else {
+            const errorText = await response.text();
+            console.error(`API returned error ${response.status}:`, errorText);
+            throw new Error(`API error: ${response.status} ${errorText.substring(0, 100)}`);
+        }
+    } catch (error) {
+        console.error('Expert selection error:', error);
+        
+        // Environment-specific error handling
+        if (process.env.NODE_ENV === 'production') {
+            // In production, we don't show sample experts - we just show an error
+            console.error('PRODUCTION MODE: Expert generation failed with no fallback');
+            showError(createError(
+                'EXPERT_GENERATION_ERROR',
+                'Failed to generate experts. Our systems encountered an issue processing your topic. Please try again later or try a different topic.',
+                'high',
+                true,
+                error instanceof Error ? error.message : String(error)
+            ));
+            updateStepState('expertSelection', 'error', 'Failed to generate experts');
+            return;
+        } else {
+            // In development, we can fall back to mock experts
+            console.warn('DEVELOPMENT MODE: Using sample experts as fallback');
+            showWarning('Using Sample Experts', 'We encountered an issue generating custom experts for this topic. Using sample experts instead.');
+            
+            // Use mock experts as fallback in development
+            const fallbackExperts = mockExperts.map(expert => ({
+                ...expert,
+                id: expert.id || uuidv4(),
+            }));
+            
+            setExperts(fallbackExperts);
+            setExpertsSelected(true);
+            updateStepState('expertSelection', 'success', 'Sample experts loaded (fallback)');
+            return fallbackExperts;
+        }
+    }
+};
+```
+
+## API Integration
+
+The Expert Types system integrates with API endpoints through a structured approach:
+
+### API Endpoints
+
+The primary endpoint for expert selection is `/api/debate-experts`. This endpoint accepts the following parameters:
+
+```typescript
+interface ExpertSelectionRequest {
+    action: 'select-experts';     // Required action
+    topic: string;                // Debate topic
+    expertType: 'historical' | 'ai'; // Type of experts to select
+    count?: number;               // Number of experts (default: 2)
+    arguments?: string[];         // Optional debate arguments for context
+}
+```
+
+The response format is:
+
+```typescript
+interface ExpertSelectionResponse {
+    status: 'success' | 'error';
+    experts?: Expert[];           // Array of selected experts
+    error?: string;               // Error message if status is 'error'
+    expertType?: 'historical' | 'ai'; // Type of experts returned
+}
+```
+
+### API Diagnostics
+
+The application includes a diagnostic tool to test API connectivity for expert selection:
+
+```typescript
+// Test API Endpoints button
+<Button onClick={async () => {
+    // API endpoints to test in order of preference
+    const apiEndpoints = [
+        '/api/debate-experts',     // Primary endpoint
+        '/api/test-openai-real',   // OpenAI API connectivity test
+        '/api/debate',             // Alternative debate endpoint
+        '/api/debate/experts'      // Legacy endpoint
+    ];
+    
+    // Test each endpoint with proper parameters
+    for (const endpoint of apiEndpoints) {
+        try {
+            const response = await fetch(endpoint, {
+                method: endpoint === '/api/test-openai-real' ? 'GET' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: endpoint === '/api/test-openai-real' ? undefined : JSON.stringify({
+                    action: 'select-experts',
+                    topic: topicTitle,
+                    expertType: expertType,
+                    count: 2
+                })
+            });
+            
+            // Log results for debugging
+            console.log(`Response from ${endpoint}: ${response.status}`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`Data from ${endpoint}:`, data);
+            }
+        } catch (error) {
+            console.error(`Error with ${endpoint}:`, error);
+        }
+    }
+}}>
+    Test API Endpoints
+</Button>
+```
+
+## Environmental Differences
+
+The Expert Types system handles expert selection differently based on the environment:
+
+### Production Mode
+
+In production:
+- Real API endpoints are always used
+- No fallback to mock experts
+- Clear error messages for users if API calls fail
+- Retry button allows users to attempt expert generation again
+- Timeout handling prevents infinite loading
+
+```typescript
+// Production mode error handling
+if (process.env.NODE_ENV === 'production') {
+    console.error('PRODUCTION MODE: Expert generation failed');
+    showError(createError(
+        'EXPERT_GENERATION_ERROR',
+        'Failed to generate experts. Please try again or try a different topic.',
+        'high',
+        true
+    ));
+    updateStepState('expertSelection', 'error', 'Failed to generate experts');
+}
+```
+
+### Development Mode
+
+In development:
+- Attempts real API endpoints first
+- Falls back to mock experts if API calls fail
+- Shows warning to indicate using sample experts
+- Allows testing with different mock expert types 

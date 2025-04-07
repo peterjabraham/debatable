@@ -80,14 +80,88 @@ Once a topic is selected, the system generates or selects appropriate experts:
 
 ```typescript
 // Expert selection function in DebatePanel.tsx
-const selectExperts = async () => {
-    // Fetch or generate experts based on topic and expert type
-    // For historical experts or AI experts
+const selectExpertsWithTopic = async (directTopic: string) => {
+    // Set loading state
+    updateStepState('expertSelection', 'loading', 'Finding experts for this topic...');
     
-    // In production, experts are retrieved from a predefined list
-    // or generated via the API
-    const selectedExperts = await getExpertsForTopic(topic, expertType);
-    setExperts(selectedExperts);
+    // Parse topic if it's stored as JSON
+    let topicTitle = directTopic;
+    let topicArguments = [];
+    
+    if (typeof topicTitle === 'string' && topicTitle.startsWith('{') && topicTitle.includes('title')) {
+        try {
+            const parsedTopic = JSON.parse(topicTitle);
+            topicTitle = parsedTopic.title || topicTitle;
+            
+            if (parsedTopic.data && parsedTopic.data.arguments) {
+                topicArguments = parsedTopic.data.arguments;
+            }
+        } catch (e) {
+            console.warn('Failed to parse topic as JSON:', e);
+        }
+    }
+    
+    // Call the API endpoint with proper parameters
+    try {
+        const apiEndpoint = '/api/debate-experts';
+        const requestBody = {
+            action: 'select-experts',
+            topic: topicTitle,
+            expertType: expertType || 'ai',
+            count: 2
+        };
+        
+        const response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                // Format experts properly
+                const formattedExperts = data.experts.map(expert => ({
+                    id: expert.id || uuidv4(),
+                    name: expert.name,
+                    expertise: expert.expertise || [],
+                    stance: expert.stance || 'neutral',
+                    background: expert.background || ''
+                }));
+                
+                setExperts(formattedExperts);
+                setExpertsSelected(true); // Flag to show Start Debate button
+                return formattedExperts;
+            }
+        }
+        
+        throw new Error('Failed to get experts from API');
+    } catch (error) {
+        // In production, we don't show sample experts - we just show an error
+        if (process.env.NODE_ENV === 'production') {
+            // Show error and allow retry
+            showError(createError(
+                'EXPERT_GENERATION_ERROR',
+                'Failed to generate experts. Please try again later.',
+                'high',
+                true
+            ));
+        } else {
+            // In development, we can fall back to mock experts
+            const fallbackExperts = mockExperts.map(expert => ({
+                ...expert,
+                id: expert.id || uuidv4(),
+            }));
+            
+            setExperts(fallbackExperts);
+            setExpertsSelected(true);
+            return fallbackExperts;
+        }
+    }
 };
 ```
 
@@ -96,34 +170,66 @@ const selectExperts = async () => {
 Messages are generated using the OpenAI API through the debate/response endpoint:
 
 ```typescript
-// Example from API route
-export async function POST(request: NextRequest) {
-    const { expert, messages, topic } = await request.json();
-    
-    // Call OpenAI to generate a response
-    const response = await openai.chat.completions.create({
-        model: "gpt-4-turbo",
-        messages: [
-            // System message with expert information
-            {
-                role: "system",
-                content: `You are ${expert.name}, ${expert.background}`
-            },
-            // Prior messages for context
-            ...messages.map(m => ({ 
-                role: m.role, 
-                content: m.content 
-            })),
-            // Most recent message to respond to
-        ],
-        temperature: 0.7,
-    });
-    
-    return NextResponse.json({ 
-        response: response.choices[0].message.content,
-        usage: response.usage
-    });
-}
+// Generate expert responses
+const generateLocalExpertResponses = async (currentExperts: Expert[], currentMessages: Message[]) => {
+    // Create a copy of messages for safety
+    const messagesCopy = [...currentMessages];
+    const newMessages: Message[] = [];
+
+    // Process each expert
+    await Promise.all(currentExperts.map(async (expert) => {
+        try {
+            // Call the API for each expert
+            const response = await fetch('/api/debate/response', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    expert,
+                    messages: messagesCopy,
+                    topic: topic || selectedTopic || 'General debate'
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                
+                // Create the new message
+                const newMessage: Message = {
+                    id: uuidv4(),
+                    role: 'assistant',
+                    content: data.response,
+                    speaker: expert.name,
+                    timestamp: new Date().toISOString()
+                };
+                
+                // Add to our collection of new messages
+                newMessages.push(newMessage);
+            }
+        } catch (error) {
+            // Add error message to collection if generation fails
+            const errorMessage: Message = {
+                id: uuidv4(),
+                role: 'assistant',
+                content: `I apologize, but there was an error generating my response as ${expert.name}.`,
+                speaker: expert.name,
+                timestamp: new Date().toISOString()
+            };
+            
+            newMessages.push(errorMessage);
+        }
+    }));
+
+    // Only update the messages state if we have new messages
+    if (newMessages.length > 0) {
+        // Add all the new messages to the current messages
+        const updatedMessages = [...currentMessages, ...newMessages];
+        
+        // Update the store with all messages at once
+        setMessages(updatedMessages);
+    }
+};
 ```
 
 ### State Management
@@ -210,6 +316,61 @@ USE_VOICE_SYNTHESIS=true
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ```
 
+## Diagnostic Tools
+
+The Debate Engine includes diagnostic tools to help troubleshoot API connectivity issues:
+
+```typescript
+// API Endpoint Testing Button
+<Button
+    onClick={async () => {
+        // Get current topic
+        const currentTopic = topic || selectedTopic;
+        
+        // API endpoints to test
+        const apiEndpoints = [
+            '/api/debate-experts',
+            '/api/test-openai-real',
+            '/api/debate',
+            '/api/debate/experts'
+        ];
+        
+        // Test each endpoint
+        for (const endpoint of apiEndpoints) {
+            console.log(`Testing endpoint: ${endpoint}`);
+            
+            try {
+                // Make appropriate request for each endpoint
+                const response = await fetch(endpoint, {
+                    method: endpoint === '/api/test-openai-real' ? 'GET' : 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: endpoint === '/api/test-openai-real' ? undefined : JSON.stringify({
+                        action: 'select-experts',
+                        topic: currentTopic,
+                        expertType: expertType || 'ai',
+                        count: 2
+                    })
+                });
+                
+                console.log(`Response status from ${endpoint}: ${response.status}`);
+                
+                // Process and display results
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log(`Success response from ${endpoint}:`, data);
+                }
+            } catch (error) {
+                console.error(`Error with endpoint ${endpoint}:`, error);
+            }
+        }
+    }}
+>
+    Test API Endpoints
+</Button>
+```
+
 ## Common Issues & Solutions
 
 ### Slow Response Generation
@@ -218,9 +379,20 @@ ELEVENLABS_API_KEY=your_elevenlabs_api_key
 - Use smaller LLM models for faster responses
 
 ### Expert Selection Issues
-- Ensure expert types match the selected topic domain
-- Add fallback mock experts for API failures
-- Log detailed errors for debugging
+- **Incorrect API Endpoint**: Ensure the correct endpoint `/api/debate-experts` is used with proper parameters
+- **Missing Parameters**: The API needs `action: 'select-experts'`, `topic`, `expertType`, and `count`
+- **Development vs. Production**: Development mode can use mock experts as fallback, but production should show appropriate errors
+- **Timeout Handling**: Set appropriate timeouts for API calls to prevent infinite loading states
+
+### Message Handling Issues
+- **Array Handling**: When updating messages, collect all new messages first, then update state in a single operation
+- **Store Integration**: The `setMessages` function expects a complete array, not an updater function
+- **Batch Updates**: Process all expert responses in parallel using `Promise.all` for efficiency
+
+### Debate Flow Issues
+- **Missing Start Button**: Ensure the `expertsSelected` flag is set to true when experts are available
+- **Topic Propagation**: Use direct parameter passing for topic to avoid state synchronization issues
+- **Error Recovery**: Implement proper retry mechanisms with clear error messages for users
 
 ## Related Components
 - [Content Processing](./Content-Processing.md)
