@@ -465,25 +465,15 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
     // Handle expert type selection
     const handleExpertTypeSelect = async (type: 'historical' | 'ai') => {
-        try {
-            updateStepState('expertSelection', 'loading', 'Preparing expert selection...');
+        console.log(`Expert type selected: ${type}`);
+        setExpertType(type);
+
+        // If we already have a topic, we can re-select experts based on the new type
+        if (topic || selectedTopic) {
+            // Clear existing experts
             setExperts([]);
-            setExpertType(type);
-            setSelectedParticipantType(type);
-            clearError();
-            setIsLoading(false);
-            updateStepState('expertSelection', 'success');
-            showSuccess('Expert Type Selected', `${type} experts will be used for the debate`);
-        } catch (error) {
-            const appError = createError(
-                'EXPERT_SELECTION_ERROR',
-                'Failed to set expert type',
-                'medium',
-                true,
-                { type }
-            );
-            handleError(appError);
-            updateStepState('expertSelection', 'error', 'Failed to set expert type');
+            // Generate new experts with the selected type
+            await selectExperts();
         }
     };
 
@@ -720,6 +710,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             };
 
             console.log('Request body:', JSON.stringify(requestBody));
+            console.log(`Using expert type: ${expertType || 'ai'} (from store: ${expertType})`);
 
             try {
                 console.log(`Sending request to ${apiEndpoint}...`);
