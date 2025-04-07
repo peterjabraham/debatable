@@ -1,0 +1,82 @@
+# Everything in node_modules folder
+/node_modules/
+node_modules
+
+# Everything in .next folder
+/.next/
+.next/
+
+# Everything in old-docs folder
+/old-docs/
+old-docs/
+
+# Everything in assets/screenshots and assets-backup/screenshots folder
+/assets/screenshots/
+assets/screenshots/
+/assets-backup/screenshots/
+assets-backup/screenshots/
+
+# Everything in uploads folder
+/uploads/
+uploads/
+
+# Specific files
+.gitignore
+.env.local
+crank-debate-3fb8b83d39dc.json
+
+# From .gitignore
+# dependencies
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+.env.development.local
+.env.test.local
+.env.production.local
+.env
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Google Cloud credentials
+*.json
+*.json.key
+service-account*.json
+*-credentials.json
+*-firebase-adminsdk-*.json
+crank-debate-e7ffe747c370.json
+
+# Test artifacts
+/test-results/
+/playwright-report/
+/playwright/.cache/
