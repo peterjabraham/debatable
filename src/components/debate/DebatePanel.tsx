@@ -490,7 +490,19 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
     // Handle topic selection from extracted topics
     const handleTopicSelect = (topicTitle: string, topicData?: any) => {
         console.log('Topic selected:', topicTitle, 'with data:', topicData);
+
+        // Make sure the title is not empty
+        if (!topicTitle || topicTitle.trim() === '') {
+            console.warn('Empty topic title provided');
+            showWarning('Invalid Topic', 'Please select a valid topic');
+            return;
+        }
+
+        // Update the user topic state
         setUserTopic(topicTitle);
+
+        // Update the selected topic state
+        setSelectedTopic(topicTitle);
 
         // Store the complete topic data in the store, not just the title
         // This ensures arguments are available for expert generation
@@ -500,13 +512,13 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 title: topicTitle,
                 data: topicData
             });
+            console.log('Setting topic in store with data:', topicWithData);
             setTopic(topicWithData);
         } else {
             // Fallback to just the title if no data provided
+            console.log('Setting topic in store with title only:', topicTitle);
             setTopic(topicTitle);
         }
-
-        setSelectedTopic(topicTitle);
 
         // Ensure participant type is set if not already selected
         // Default to 'ai' experts when selecting from Suggested Debate Topics
@@ -522,23 +534,63 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         // Ensure expert selection is shown after topic is selected
         setShowExpertSelection(true);
         setExpertsLoading(false);
+
+        // For debugging
+        setTimeout(() => {
+            console.log('After topic selection:');
+            console.log('- Topic in store:', topic);
+            console.log('- Selected Topic state:', selectedTopic);
+            console.log('- User Topic state:', userTopic);
+        }, 100);
     };
 
     // Initialize debate after topic selection
     const initializeDebateWithTopic = async () => {
         console.log('### DEBUG: initializeDebateWithTopic called ###');
-        console.log('- Topic:', selectedTopic);
+        console.log('- Topic from store:', topic);
+        console.log('- Selected Topic state:', selectedTopic);
+        console.log('- User Topic state:', userTopic);
         console.log('- Participant Type:', selectedParticipantType);
         console.log('- Experts Length:', experts.length);
         console.log('- ExpertsLoading:', expertsLoading);
         console.log('- ExpertsSelected:', expertsSelected);
 
-        // More robust check for topic to prevent minification issues
-        const currentTopic = selectedTopic || '';
+        // More robust check for topic with multiple fallbacks
+        let currentTopic = topic || selectedTopic || userTopic || '';
+
+        // Additional debug to identify the issue
+        console.log('Current topic before check:', currentTopic, typeof currentTopic);
+
+        // If the topic is a JSON string, parse it to get the title
+        if (typeof currentTopic === 'string' && currentTopic.startsWith('{') && currentTopic.includes('title')) {
+            try {
+                const parsedTopic = JSON.parse(currentTopic);
+                console.log('Parsed topic:', parsedTopic);
+                // Make sure we have the title after parsing
+                if (parsedTopic && parsedTopic.title) {
+                    // Keep the JSON string as currentTopic but log the title
+                    console.log('Using parsed title:', parsedTopic.title);
+                }
+            } catch (e) {
+                console.warn('Failed to parse topic JSON:', e);
+            }
+        }
+
         if (!currentTopic || currentTopic.trim() === '') {
-            console.warn('Cannot initialize debate: missing topic', { selectedTopic: currentTopic });
+            console.warn('Cannot initialize debate: missing topic', {
+                topic,
+                selectedTopic,
+                userTopic,
+                currentTopic
+            });
             showWarning('Missing Topic', 'Please enter a debate topic first');
             return;
+        }
+
+        // Ensure the topic is set in the store if needed
+        if (!topic && currentTopic) {
+            console.log('Setting topic in store:', currentTopic);
+            setTopic(currentTopic);
         }
 
         // Set default participant type if not set
@@ -1553,6 +1605,49 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         }
     }, [existingDebate]);
 
+    // Add this useEffect after the existing useEffect hooks
+    // This will ensure the topic is synchronized between the local state and store
+    useEffect(() => {
+        // If we have a selectedTopic but no topic in the store, update the store
+        if (selectedTopic && !topic) {
+            console.log('Syncing selectedTopic to store:', selectedTopic);
+            setTopic(selectedTopic);
+        }
+
+        // Log state for debugging
+        if (selectedTopic || topic) {
+            console.log('Topic State Sync:');
+            console.log('- Topic in store:', topic);
+            console.log('- Selected Topic:', selectedTopic);
+            console.log('- User Topic:', userTopic);
+        }
+    }, [selectedTopic, topic, userTopic, setTopic]);
+
+    // Add a utility function to ensure topic is properly set
+    const ensureTopicSet = (providedTopic: string | null | undefined) => {
+        console.log('### Ensuring topic is set with:', providedTopic);
+
+        if (!providedTopic || providedTopic.trim() === '') {
+            console.warn('Cannot ensure topic is set - provided topic is empty');
+            return false;
+        }
+
+        // Update local states
+        setUserTopic(providedTopic);
+        setSelectedTopic(providedTopic);
+
+        // Update store
+        setTopic(providedTopic);
+
+        // Verify topic was set
+        console.log('Topic verification after setting:');
+        console.log('- Topic in store is now:', topic);
+        console.log('- Selected Topic is now:', selectedTopic);
+        console.log('- User Topic is now:', userTopic);
+
+        return true;
+    };
+
     // Main render
     return (
         <div className="flex flex-col bg-gray-700 h-full max-w-4xl mx-auto">
@@ -1723,10 +1818,36 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                         `Understanding ${userTopic} requires careful consideration of evidence.`
                                                     ]
                                                 };
+
+                                                // First, ensure the topic is properly set in all states
+                                                ensureTopicSet(userTopic);
+
+                                                // Then call handler for side effects
                                                 handleTopicSelect(userTopic, topicData);
+
+                                                // Increase timeout to ensure state is updated
                                                 setTimeout(() => {
-                                                    initializeDebateWithTopic();
-                                                }, 100);
+                                                    console.log('Checking topic before initialization (direct topic input):');
+                                                    console.log('- Topic in store:', topic);
+                                                    console.log('- Selected Topic:', selectedTopic);
+                                                    console.log('- User Topic:', userTopic);
+
+                                                    // Double-check that topic is set in at least one place
+                                                    if (topic || selectedTopic || userTopic) {
+                                                        console.log('Topic appears to be set, initializing debate...');
+                                                        initializeDebateWithTopic();
+                                                    } else {
+                                                        console.warn('Topic still not set properly before initialization (direct topic input)');
+                                                        // Force topic setting one more time as a final fallback
+                                                        const success = ensureTopicSet(userTopic);
+                                                        if (success) {
+                                                            console.log('Forced topic setting, now initializing debate...');
+                                                            initializeDebateWithTopic();
+                                                        } else {
+                                                            showWarning('Topic Error', 'Could not set topic properly. Please try again.');
+                                                        }
+                                                    }
+                                                }, 800);  // Increased timeout for more reliability
                                             }}
                                             disabled={!userTopic.trim()}
                                             className="mt-2 w-full bg-green-600 hover:bg-green-700"
@@ -1755,10 +1876,35 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                             <button
                                                 key={index}
                                                 onClick={() => {
+                                                    // First ensure the topic is properly set in all states
+                                                    ensureTopicSet(topic.title);
+
+                                                    // Then call handler for side effects
                                                     handleTopicSelect(topic.title, topic);
+
+                                                    // Increase timeout to ensure state is updated
                                                     setTimeout(() => {
-                                                        initializeDebateWithTopic();
-                                                    }, 100);
+                                                        console.log('Checking topic before initialization (suggested topic):');
+                                                        console.log('- Topic in store:', topic);
+                                                        console.log('- Selected Topic:', selectedTopic);
+                                                        console.log('- User Topic:', userTopic);
+
+                                                        // Double-check that topic is set in at least one place
+                                                        if (topic || selectedTopic || userTopic) {
+                                                            console.log('Topic appears to be set, initializing debate...');
+                                                            initializeDebateWithTopic();
+                                                        } else {
+                                                            console.warn('Topic still not set properly before initialization (suggested topic)');
+                                                            // Force topic setting one more time as a final fallback
+                                                            const success = ensureTopicSet(topic.title);
+                                                            if (success) {
+                                                                console.log('Forced topic setting, now initializing debate...');
+                                                                initializeDebateWithTopic();
+                                                            } else {
+                                                                showWarning('Topic Error', 'Could not set topic properly. Please try again.');
+                                                            }
+                                                        }
+                                                    }, 800);  // Increased timeout for more reliability
                                                 }}
                                                 className={`card p-4 text-left hover:bg-accent transition-colors ${selectedTopic === topic.title ? 'border-2 border-primary' : 'border border-border'}`}
                                             >
