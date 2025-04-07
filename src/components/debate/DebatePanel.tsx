@@ -755,6 +755,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
                             console.log('Formatted experts:', formattedExperts);
                             setExperts(formattedExperts);
+                            setExpertsSelected(true); // Set this flag to true when experts are available
                             updateStepState('expertSelection', 'success', 'Experts selected successfully');
                             return formattedExperts;
                         } else {
@@ -802,6 +803,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             }));
 
             setExperts(fallbackExperts);
+            setExpertsSelected(true); // Set this flag to true even for mock experts
             updateStepState('expertSelection', 'success', 'Sample experts loaded (fallback)');
             return fallbackExperts;
         }
@@ -1559,6 +1561,21 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
         return true;
     };
+
+    // Add a debug button to help with troubleshooting after the experts are shown
+    useEffect(() => {
+        console.log("Experts state changed:");
+        console.log("- Experts count:", experts.length);
+        console.log("- Experts loading:", expertsLoading);
+        console.log("- Experts selected:", expertsSelected);
+        console.log("- Messages count:", messages.length);
+
+        // Check if we have experts but the expertsSelected flag isn't set
+        if (experts.length > 0 && !expertsLoading && !expertsSelected) {
+            console.log("Experts are loaded but expertsSelected flag is not set - fixing");
+            setExpertsSelected(true);
+        }
+    }, [experts, expertsLoading, expertsSelected, messages.length]);
 
     // Main render
     return (
