@@ -2035,6 +2035,155 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                         <>
                                             <p className="text-white text-center">Generating expert profiles based on your topic...</p>
                                             <p className="text-sm text-muted-foreground mt-2">This may take a moment as we create tailored debate experts.</p>
+
+                                            {/* Add API test button */}
+                                            <Button
+                                                onClick={async () => {
+                                                    console.log("Testing API endpoints directly");
+
+                                                    // Show that we're testing
+                                                    showInfo('API Test', 'Testing API endpoints for expert generation...');
+
+                                                    // Get current topic
+                                                    const currentTopic = topic || selectedTopic;
+                                                    if (!currentTopic) {
+                                                        console.warn('Missing topic, cannot test API');
+                                                        showWarning('Missing Topic', 'Please enter a topic first');
+                                                        return;
+                                                    }
+
+                                                    // Parse topic data
+                                                    let topicTitle = currentTopic;
+                                                    let topicArguments: any[] = [];
+
+                                                    try {
+                                                        if (typeof currentTopic === 'string' && currentTopic.startsWith('{') && currentTopic.includes('title')) {
+                                                            const parsedTopic = JSON.parse(currentTopic);
+                                                            topicTitle = parsedTopic.title;
+
+                                                            if (parsedTopic.data && parsedTopic.data.arguments) {
+                                                                topicArguments = parsedTopic.data.arguments;
+                                                            }
+                                                        }
+                                                    } catch (e) {
+                                                        console.warn('Failed to parse topic data, using as plain text');
+                                                    }
+
+                                                    console.log(`Testing with topic: "${topicTitle}"`);
+
+                                                    // Get API key from environment
+                                                    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+                                                    console.log(`Using API key: ${apiKey ? 'Available (starting with ' + apiKey.substring(0, 3) + '...)' : 'Not available'}`);
+
+                                                    // API endpoints to test
+                                                    const apiEndpoints = [
+                                                        '/api/debate',
+                                                        '/api/debate/experts',
+                                                        '/api/experts',
+                                                        '/api/openai/generate-experts'
+                                                    ];
+
+                                                    // Define the results interface
+                                                    interface ApiTestResult {
+                                                        status: string;
+                                                        response: string | null;
+                                                        error: string | null;
+                                                        data?: any;
+                                                        rawResponse?: string;
+                                                    }
+
+                                                    const results: Record<string, ApiTestResult> = {};
+
+                                                    // Test each endpoint
+                                                    for (const endpoint of apiEndpoints) {
+                                                        console.log(`Testing endpoint: ${endpoint}`);
+
+                                                        results[endpoint] = { status: 'Testing...', response: null, error: null, data: undefined, rawResponse: undefined };
+
+                                                        try {
+                                                            const controller = new AbortController();
+                                                            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
+
+                                                            const requestBody = {
+                                                                action: 'select-experts',
+                                                                topic: topicTitle,
+                                                                expertType: expertType || 'ai',
+                                                                count: 2,
+                                                                arguments: topicArguments
+                                                            };
+
+                                                            console.log(`Request body for ${endpoint}:`, JSON.stringify(requestBody));
+
+                                                            const response = await fetch(endpoint, {
+                                                                method: 'POST',
+                                                                headers: {
+                                                                    'Content-Type': 'application/json',
+                                                                    'Authorization': `Bearer ${apiKey}`
+                                                                },
+                                                                body: JSON.stringify(requestBody),
+                                                                signal: controller.signal
+                                                            });
+
+                                                            clearTimeout(timeoutId);
+
+                                                            console.log(`Response status from ${endpoint}: ${response.status}`);
+                                                            results[endpoint].status = `HTTP ${response.status}`;
+
+                                                            if (response.ok) {
+                                                                const responseText = await response.text();
+                                                                console.log(`Raw response from ${endpoint} (first 100 chars):`, responseText.substring(0, 100) + '...');
+
+                                                                try {
+                                                                    const data = JSON.parse(responseText);
+                                                                    results[endpoint].response = `Success: ${data.experts ? data.experts.length + ' experts' : 'No experts'} returned`;
+                                                                    results[endpoint].data = data;
+                                                                } catch (parseError) {
+                                                                    console.error(`Error parsing response from ${endpoint}:`, parseError);
+                                                                    results[endpoint].error = `Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+                                                                    results[endpoint].rawResponse = responseText.substring(0, 200) + '...';
+                                                                }
+                                                            } else {
+                                                                try {
+                                                                    const errorText = await response.text();
+                                                                    console.warn(`API error details from ${endpoint}:`, errorText);
+                                                                    results[endpoint].error = errorText.substring(0, 200) + '...';
+                                                                } catch (err) {
+                                                                    results[endpoint].error = `Could not read error response: ${err instanceof Error ? err.message : String(err)}`;
+                                                                }
+                                                            }
+                                                        } catch (endpointError) {
+                                                            console.error(`Error with endpoint ${endpoint}:`, endpointError);
+                                                            results[endpoint].status = 'Failed';
+                                                            results[endpoint].error = endpointError instanceof Error ? endpointError.message : String(endpointError);
+                                                        }
+                                                    }
+
+                                                    // Format results for display
+                                                    let resultsFormatted = 'API Endpoint Tests:\n\n';
+                                                    for (const endpoint of apiEndpoints) {
+                                                        resultsFormatted += `${endpoint}:\n`;
+                                                        resultsFormatted += `  Status: ${results[endpoint].status}\n`;
+                                                        if (results[endpoint].response) {
+                                                            resultsFormatted += `  Response: ${results[endpoint].response}\n`;
+                                                        }
+                                                        if (results[endpoint].error) {
+                                                            resultsFormatted += `  Error: ${results[endpoint].error}\n`;
+                                                        }
+                                                        resultsFormatted += '\n';
+                                                    }
+
+                                                    console.log(resultsFormatted);
+
+                                                    // Show results in an alert
+                                                    alert(resultsFormatted);
+                                                }}
+                                                variant="outline"
+                                                size="sm"
+                                                className="mt-4"
+                                            >
+                                                Test API Endpoints
+                                            </Button>
+
                                             {/* Add retry button after 15 seconds */}
                                             <div id="expert-retry-button" className="mt-6 opacity-0" style={{ animation: 'fadeIn 0.5s ease-in forwards 15s' }}>
                                                 <Button
