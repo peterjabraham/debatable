@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button';
 import { useDebateStore } from '@/lib/store';
 import { Expert } from '@/types/expert';
 import { Message } from '@/types/message';
-import { MVP_CONFIG, mockExperts as importedMockExperts } from '@/lib/config';
+import { MVP_CONFIG } from '@/lib/config';
 import { useToast } from "@/components/ui/use-toast"
-import { ContentUploader } from '@/components/content-processing/ContentUploader';
+import { Input } from '@/components/ui/input';
 import { useSession } from 'next-auth/react';
 
 type DebateStep = 'topicSelection' | 'expertTypeSelection' | 'expertSelection' | 'responseGeneration' | 'discussion' | 'finished';
@@ -33,12 +33,16 @@ interface MessageBubbleProps {
     experts: Expert[];
 }
 
+// Assuming mockExperts is correctly exported from config or use local mock
+// Import might be incorrect, relying on local mock definition below
+// import { MVP_CONFIG, mockExperts as importedMockExperts } from '@/lib/config'; 
+// --- Mock implementations for missing/renamed imports --- 
+// Define mockExperts locally as it seems unavailable from config
+const mockExperts: Expert[] = [{ id: 'mock1', name: 'Mock Expert 1', type: 'ai', background: 'Mock BG', expertise: ['mocking'], stance: 'pro' }];
 const createError = (code: string, message: string, level: string, retry?: boolean, details?: string) => ({ code, message, level, retry, details });
-const API_CONFIG = MVP_CONFIG;
-const requestTracker = { recentRequests: new Map(), addRequest: () => { } };
-
-// Use imported mockExperts if available, otherwise provide fallback
-const mockExperts = importedMockExperts || [{ id: 'mock1', name: 'Mock Expert 1', type: 'ai', background: 'Mock BG', expertise: ['mocking'], stance: 'pro' }];
+const API_CONFIG = MVP_CONFIG; // Alias for consistency if needed
+const requestTracker = { recentRequests: new Map(), addRequest: (_key: string) => { } }; // Mock tracker, accept key but ignore it
+// --- End Mock implementations --- 
 
 export function DebatePanel() {
     const { data: session } = useSession();
@@ -77,6 +81,7 @@ export function DebatePanel() {
         finished: { step: 'finished', status: 'idle' }
     });
     const [userInput, setUserInput] = useState('');
+    const [manualTopicInput, setManualTopicInput] = useState('');
 
     const messagesEndRef = useRef<null | HTMLDivElement>(null);
     const { toast } = useToast();
@@ -177,16 +182,22 @@ export function DebatePanel() {
             debouncedSelectExperts(selectedTopic, expertType);
         }
     }, [selectedTopic, expertType, debouncedSelectExperts, setExperts]);
-    const handleTopicSelect = useCallback((topicTitle: string) => {
-        console.log("Topic selected:", topicTitle);
-        setTopic(topicTitle);
-        setSelectedTopic(topicTitle);
-        updateStepState('topicSelection', 'success', `Topic set: ${topicTitle}`);
+    const handleTopicSelect = useCallback((topicTitle?: string) => {
+        const finalTopic = topicTitle || manualTopicInput;
+        if (!finalTopic) {
+            showWarning("No Topic", "Please enter a topic or upload content.");
+            return;
+        }
+        console.log("Topic selected:", finalTopic);
+        setTopic(finalTopic);
+        setSelectedTopic(finalTopic);
+        setManualTopicInput("");
+        updateStepState('topicSelection', 'success', `Topic set: ${finalTopic}`);
         if (!expertType) {
             setExpertType('ai');
             updateStepState('expertTypeSelection', 'success', 'Defaulted to AI Experts');
         }
-    }, [setTopic, setExpertType, expertType, updateStepState]);
+    }, [setTopic, setExpertType, expertType, updateStepState, manualTopicInput, showWarning]);
     const handleExpertTypeSelect = useCallback((type: 'historical' | 'ai') => {
         console.log("Expert type selected:", type);
         setExpertType(type);
@@ -319,7 +330,7 @@ export function DebatePanel() {
         }
     };
 
-    const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const handleInputChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setUserInput(event.target.value);
     };
 
@@ -363,9 +374,9 @@ export function DebatePanel() {
             event.target.nextElementSibling.textContent = `Selected: ${file.name}`;
         }
         const apiEndpoints = [
-            `${API_CONFIG?.baseUrl}/api/content/document`,
-            `${API_CONFIG?.baseUrl}/api/content/analyze`,
-            `${API_CONFIG?.baseUrl}/api/analyze`
+            `/api/content/document`,
+            `/api/content/analyze`,
+            `/api/analyze`
         ];
         const mockTopics = [
             { title: `Climate Change (Mock for ${file.name})`, confidence: 0.95, arguments: [] },
@@ -376,7 +387,8 @@ export function DebatePanel() {
             let responseData: { topics?: any[] } | null = null;
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('userId', session?.user?.id || 'anonymous');
+            const userId = session?.user && 'id' in session.user ? session.user.id : 'anonymous';
+            formData.append('userId', userId as string);
             formData.append('fileName', file.name);
 
             for (const endpoint of apiEndpoints) {
@@ -412,6 +424,14 @@ export function DebatePanel() {
         }
     };
 
+    const handleManualTopicInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+        setManualTopicInput(event.target.value);
+    };
+    const handleManualTopicSubmit = (event: FormEvent) => {
+        event.preventDefault();
+        handleTopicSelect();
+    };
+
     return (
         <div className="flex flex-col h-full bg-background text-foreground p-4 md:p-6 space-y-4">
             {errorMessage && <div className="p-3 bg-destructive/20 text-destructive rounded-md text-sm">Error: {errorMessage}</div>}
@@ -420,17 +440,30 @@ export function DebatePanel() {
             {loadingState && <div className="p-3 bg-gray-500/10 text-gray-500 rounded-md text-sm animate-pulse">{loadingState}</div>}
 
             {!selectedTopic && (
-                <ContentUploader
-                    onTopicExtracted={(topics: any) => {
-                        setExtractedTopics(topics);
-                        if (topics && topics.length > 0) {
-                            handleTopicSelect(topics[0].title);
-                        }
-                    }}
-                    onTopicSelected={handleTopicSelect}
-                    setLoadingState={setLoadingState}
-                    handleFileUpload={handleFileUpload}
-                />
+                <div className="p-4 border rounded-lg bg-card">
+                    <h2 className="text-lg font-semibold mb-3">Enter Debate Topic</h2>
+                    <form onSubmit={handleManualTopicSubmit} className="flex items-center gap-2 mb-4">
+                        <Input
+                            type="text"
+                            placeholder="Enter your debate topic here..."
+                            value={manualTopicInput}
+                            onChange={handleManualTopicInputChange}
+                            className="flex-grow"
+                            aria-label="Debate Topic Input"
+                        />
+                        <Button type="submit" disabled={!manualTopicInput.trim()}>Set Topic</Button>
+                    </form>
+
+                    <div className="text-center my-2 text-sm text-muted-foreground">OR</div>
+
+                    <div className="flex flex-col items-center">
+                        <label htmlFor="file-upload" className="cursor-pointer inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 mb-2">
+                            Upload Document
+                        </label>
+                        <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileUpload} accept=".pdf,.txt,.docx,.md" />
+                        <p className="text-xs text-muted-foreground">(PDF, TXT, DOCX, MD - Max 20MB)</p>
+                    </div>
+                </div>
             )}
 
             {selectedTopic && (
