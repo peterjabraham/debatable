@@ -24,6 +24,7 @@ uploads/
 .gitignore
 .env.local
 crank-debate-3fb8b83d39dc.json
+.cursor-tools.env
 
 # From .gitignore
 # dependencies
