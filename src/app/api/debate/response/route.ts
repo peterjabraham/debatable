@@ -1,58 +1,33 @@
+import { StreamingTextResponse } from 'ai';
 import { NextResponse } from 'next/server';
-import { generateDebateResponseServer } from '@/lib/openai';
+
+// No OpenAI client needed for this test
 
 /**
- * Debate Response API Route
+ * Debate Response API Route (Streaming - Testing without Edge Runtime)
  * 
- * This route is specifically for generating debate responses using OpenAI.
- * It's intentionally separated from recommended readings functionality.
+ * This route generates debate responses using OpenAI and streams them back.
  */
 export async function POST(request: Request) {
     try {
-        const { expert, messages, topic, topicArguments } = await request.json();
-
-        if (!expert || !messages) {
-            return NextResponse.json(
-                { error: 'Missing required fields: expert and messages' },
-                { status: 400 }
-            );
-        }
-
-        // Format the messages for OpenAI
-        const formattedMessages = [...messages];
-
-        // If this is the first message and we have arguments, include them
-        if (messages.length === 0 && topicArguments && topicArguments.length > 0) {
-            // Get an argument appropriate for this expert
-            const expertArgument = topicArguments[0]; // Just use the first one for simplicity
-
-            // Add a system message with the argument
-            formattedMessages.unshift({
-                role: 'system',
-                content: `The debate topic is: ${topic}. Consider this key point: ${typeof expertArgument === 'string'
-                        ? expertArgument
-                        : (expertArgument.claim || expertArgument.text || JSON.stringify(expertArgument))
-                    }`
-            });
-        }
-
-        // Generate the debate response from OpenAI
-        const response = await generateDebateResponseServer(
-            formattedMessages,
-            expert
-        );
-
-        return NextResponse.json({
-            response: response.response,
-            usage: response.usage,
-            expert: expert.name
+        // Create a simple ReadableStream that sends "Hello, world!"
+        const stream = new ReadableStream({
+            start(controller) {
+                const encoder = new TextEncoder();
+                controller.enqueue(encoder.encode("Hello, world!"));
+                controller.close();
+            },
         });
 
+        // Return just the StreamingTextResponse
+        return new StreamingTextResponse(stream);
+
     } catch (error) {
-        console.error('[Debate Response API] Error:', error);
-        return NextResponse.json(
-            { error: 'Failed to generate debate response', message: error instanceof Error ? error.message : 'Unknown error' },
-            { status: 500 }
+        console.error('[Debate Response API - Test] Error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return new NextResponse(
+            JSON.stringify({ error: 'Test failed', message: errorMessage }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
         );
     }
 } 
