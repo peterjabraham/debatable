@@ -81,14 +81,28 @@ function extractJsonFromMarkdown(content: string): any {
     }
 }
 
+// Helper function to sanitize names for OpenAI API
+function sanitizeNameForOpenAI(name: string | undefined): string | undefined {
+    if (!name) return undefined;
+    // Added + to regex to handle consecutive invalid chars
+    return name.replace(/[^a-zA-Z0-9_-]+/g, '_');
+}
+
 /**
  * Server-side fetch implementation for Perplexity API
  * This function handles the API call on the server
  */
 async function serverFetchFromPerplexity(url: string, options: any) {
     try {
+        // *** ADD LOGGING HERE ***
+        const apiKeyUsed = options?.headers?.Authorization?.replace('Bearer ', '') || 'No API Key Found in Headers';
+        console.log(`[serverFetchFromPerplexity] Attempting fetch to ${url}. Key used (masked): ${apiKeyUsed.substring(0, 5)}...${apiKeyUsed.substring(apiKeyUsed.length - 4)}`);
+        // *** END LOGGING ***
+
         console.log('Server fetch:', url);
         const response = await nodeFetch(url, options);
+        // Log response status immediately
+        console.log(`[serverFetchFromPerplexity] Response status from ${url}: ${response.status}`);
         return response;
     } catch (error) {
         console.error('Server fetch error:', error);
@@ -108,9 +122,9 @@ export async function getExpertRecommendedReading(
     topic: string
 ): Promise<PerplexitySearchResult[]> {
     try {
-        // Check for mock data flag
+        // Check for mock data flag first
         if (process.env.USE_MOCK_DATA === 'true') {
-            console.log('Using mock data for recommended readings');
+            console.warn('[getExpertRecommendedReading] USE_MOCK_DATA is true, returning mock data.');
             return generateMockReadings(expertName, topic);
         }
 
@@ -118,34 +132,42 @@ export async function getExpertRecommendedReading(
         const isClient = typeof window !== 'undefined';
 
         if (isClient) {
-            // In the browser, use the API route to avoid CORS issues
-            console.log('Running in client environment, using API route');
+            // In the browser, use the API route
+            console.log('[getExpertRecommendedReading] Running in client environment, using API route /api/perplexity/single-expert');
             try {
                 const response = await fetch('/api/perplexity/single-expert', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        expertName,
-                        topic
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ expertName, topic })
                 });
 
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`[getExpertRecommendedReading] API route error: ${response.status}. Response: ${errorText}`);
                     throw new Error(`API route error: ${response.status}`);
                 }
 
                 const data = await response.json();
+                console.log('[getExpertRecommendedReading] Successfully fetched from API route.')
                 return data.readings || [];
             } catch (clientError) {
-                console.error('Error fetching through API route:', clientError);
-                return generateMockReadings(expertName, topic);
+                console.error('[getExpertRecommendedReading] Error fetching through API route:', clientError);
+                console.warn('[getExpertRecommendedReading] Falling back to mocks due to client-side API route error.')
+                return generateMockReadings(expertName, topic); // Fallback on client error
             }
         }
 
         // Server-side code - direct API access
-        console.log('Running in server environment, using direct API access');
+        console.log('[getExpertRecommendedReading] Running in server environment, using direct API access.');
+
+        // *** ADD LOGGING HERE ***
+        const perplexityKey = process.env.PERPLEXITY_API_KEY;
+        if (!perplexityKey) {
+            console.error('[getExpertRecommendedReading] PERPLEXITY_API_KEY environment variable is not set!');
+            throw new Error('Perplexity API key not configured on server.');
+        }
+        console.log(`[getExpertRecommendedReading] Found PERPLEXITY_API_KEY. Length: ${perplexityKey.length}. Value (masked): ${perplexityKey.substring(0, 5)}...${perplexityKey.substring(perplexityKey.length - 4)}`);
+        // *** END LOGGING ***
 
         // Create a prompt for the Chat API
         const prompt = `
@@ -178,10 +200,12 @@ export async function getExpertRecommendedReading(
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${PERPLEXITY_API_KEY}`
+                    // Ensure the correct key from process.env is used here
+                    'Authorization': `Bearer ${perplexityKey}`
                 },
                 body: JSON.stringify({
-                    model: 'sonar',
+                    // Use a reliable model like llama-3-sonar-small-32k-online or llama-3-sonar-large-32k-online
+                    model: 'llama-3-sonar-small-32k-online',
                     messages: [
                         {
                             role: 'system',
@@ -202,15 +226,17 @@ export async function getExpertRecommendedReading(
             );
 
             if (!response.ok) {
-                console.error(`Perplexity API error: ${response.status} ${response.statusText}`);
-                return generateMockReadings(expertName, topic);
+                const errorText = await response.text();
+                console.error(`[getExpertRecommendedReading] Perplexity API error: ${response.status}. Response: ${errorText}`);
+                // Don't fallback here, let the error propagate to the calling API route
+                throw new Error(`Perplexity API request failed: ${response.status}`);
             }
 
             const data = await response.json();
 
             if (!data.choices || !data.choices.length) {
                 console.error('Invalid response format from Perplexity API');
-                return generateMockReadings(expertName, topic);
+                throw new Error('Invalid response format from Perplexity API');
             }
 
             // Extract and process the content
@@ -224,14 +250,16 @@ export async function getExpertRecommendedReading(
                 title: reading.title,
                 snippet: reading.snippet
             }));
+
         } catch (fetchError) {
-            console.error('Network error fetching from Perplexity API:', fetchError);
-            console.log('Falling back to mock data due to network error');
-            return generateMockReadings(expertName, topic);
+            console.error('[getExpertRecommendedReading] Network error fetching from Perplexity API:', fetchError);
+            // Let the error propagate
+            throw fetchError;
         }
     } catch (error) {
-        console.error('Error in getExpertRecommendedReading:', error);
-        return generateMockReadings(expertName, topic);
+        console.error('[getExpertRecommendedReading] Error:', error);
+        // Let the error propagate instead of falling back to mocks
+        throw error;
     }
 }
 
