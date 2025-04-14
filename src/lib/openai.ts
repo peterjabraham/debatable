@@ -61,16 +61,19 @@ export async function generateDebateResponseServer(
         const openai = getOpenAIClient();
         const model = process.env.OPENAI_MODEL || 'gpt-4-turbo-preview';
 
-        // Ensure expert is defined before proceeding
-        if (!expert || !expert.name || !expert.background || !expert.expertise) {
-            throw new Error(`Invalid expert data: ${JSON.stringify(expert)}`);
+        // Ensure expert and required fields (name, expertise) are defined.
+        // Allow background to be potentially empty, but check for null/undefined explicitly if needed.
+        if (!expert || !expert.name || expert.background === null || expert.background === undefined || !expert.expertise) {
+            // Log the problematic expert data for debugging
+            console.error('Invalid expert data received:', JSON.stringify(expert));
+            throw new Error(`Invalid expert data received for expert generation.`);
         }
 
         // Prepare messages for OpenAI API
         const apiMessages = [
             {
                 role: 'system',
-                content: `You are ${expert.name}, an expert with the following background: ${expert.background}. 
+                content: `You are ${expert.name}, an expert with the following background: ${expert.background || 'N/A'}. 
                 Your areas of expertise include: ${Array.isArray(expert.expertise) ? expert.expertise.join(', ') : 'various fields'}.
                 You have a ${expert.stance === 'pro' ? 'positive' : 'skeptical'} stance on the topic.
                 Respond in first person as this expert would, with their tone, knowledge level, and perspective.
@@ -101,20 +104,17 @@ export async function generateDebateResponseServer(
         const promptTokens = response.usage?.prompt_tokens || 0;
         const completionTokens = response.usage?.completion_tokens || 0;
         const totalTokens = response.usage?.total_tokens || 0;
-        const cost = (promptTokens / 1000 * 0.01) + (completionTokens / 1000 * 0.03);
+        // Use calculateOpenAICost helper for consistency
+        const usageStats = calculateOpenAICost({ prompt_tokens: promptTokens, completion_tokens: completionTokens });
 
         return {
             response: responseText,
-            usage: {
-                promptTokens,
-                completionTokens,
-                totalTokens,
-                cost
-            }
+            usage: usageStats
         };
 
     } catch (error) {
-        console.error('OpenAI API error:', error);
+        console.error('OpenAI API error in generateDebateResponseServer:', error);
+        // Re-throw the error so the API route can handle it
         throw error;
     }
 }
