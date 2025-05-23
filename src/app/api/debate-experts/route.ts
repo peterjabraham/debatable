@@ -63,7 +63,19 @@ export async function POST(request: NextRequest) {
                 const expertType = body.expertType === 'ai' ? 'ai' : 'historical';
                 console.log(`Selecting ${expertType} experts for topic: ${body.topic}`);
 
-                let experts = await selectExperts(body.topic, expertType);
+                // Extract and log topicArguments if they exist
+                let topicArguments = body.topicArguments || [];
+                if (topicArguments.length > 0) {
+                    console.log(`Topic includes ${topicArguments.length} arguments for context`);
+                }
+
+                // Pass the topic arguments to the expert selector for better context
+                let experts = await selectExperts(
+                    body.topic,
+                    expertType,
+                    body.count || 2,
+                    topicArguments
+                );
 
                 // Ensure AI experts have proper naming format
                 if (expertType === 'ai') {
@@ -82,6 +94,61 @@ export async function POST(request: NextRequest) {
                     {
                         status: 'error',
                         error: error instanceof Error ? error.message : 'Failed to select experts'
+                    },
+                    { status: 500 }
+                );
+            }
+        }
+
+        // Handle suggest-historical-figures action
+        if (body.action === 'suggest-historical-figures') {
+            if (!body.topic) {
+                return NextResponse.json(
+                    { error: 'Missing topic parameter' },
+                    { status: 400 }
+                );
+            }
+
+            try {
+                console.log(`Suggesting historical figures for topic: ${body.topic}`);
+
+                // Extract topicArguments if they exist
+                let topicArguments = body.topicArguments || [];
+                if (topicArguments.length > 0) {
+                    console.log(`Topic includes ${topicArguments.length} arguments for context`);
+                }
+
+                // Get more historical figures than the normal expert selection for user choice
+                const historicalFigures = await selectExperts(
+                    body.topic,
+                    'historical',
+                    body.count || 6, // Request more options
+                    topicArguments,
+                    { provideSuggestions: true } // Flag to indicate this is for user selection
+                );
+
+                // Enhance the figures with additional selection-relevant data
+                const enhancedFigures = historicalFigures.map((figure, index) => ({
+                    ...figure,
+                    // Ensure each figure has necessary selection metadata
+                    relevanceReason: figure.perspective || `Relevant to ${body.topic} based on their historical expertise`,
+                    timeperiod: figure.title || 'Historical period not specified',
+                    notableWorks: figure.expertise || [],
+                    stance: figure.stance || (index % 2 === 0 ? 'pro' : 'con') // Alternate stances for balance
+                }));
+
+                return NextResponse.json({
+                    status: 'success',
+                    historicalFigures: enhancedFigures,
+                    topic: body.topic,
+                    count: enhancedFigures.length
+                });
+            } catch (error) {
+                console.error('Error suggesting historical figures:', error);
+                return NextResponse.json(
+                    {
+                        status: 'error',
+                        error: error instanceof Error ? error.message : 'Failed to suggest historical figures'
                     },
                     { status: 500 }
                 );

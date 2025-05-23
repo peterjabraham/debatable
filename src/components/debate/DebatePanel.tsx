@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { useDebateStore } from '@/lib/store';
 import { assignVoiceToExpert } from '@/lib/elevenlabs';
 import { Message } from '@/types/message';
@@ -21,23 +22,6 @@ import { get, post, initRequestManager, API_CONFIG } from '@/lib/api/requestMana
 import { generateExpertResponses, ExpertResponses } from '@/lib/responseGenerator';
 import { MVP_CONFIG } from '@/lib/config';
 import { ContentUploader } from '@/components/content-processing/ContentUploader';
-
-// Flag to completely disable API testing in MVP mode - ALWAYS TRUE FOR MVP
-const DISABLE_API_TESTING = true;
-
-// Flag to disable debug logs in MVP mode - ALWAYS TRUE FOR MVP
-const DISABLE_DEBUG_LOGS = true;
-
-// Add a flag to indicate if the backend API server is running
-const API_SERVER_AVAILABLE = true; // Change this to true to enable real API calls
-
-// Conditionally log based on debug setting
-const debugLog = (...args: any[]) => {
-    // Only log if debug mode is enabled in the API config
-    if (API_CONFIG?.debug) {
-        console.log('[DEBATE]', ...args);
-    }
-};
 
 // Initialize the request manager with our settings - cast to any to avoid typing issues
 initRequestManager({
@@ -93,104 +77,9 @@ type StepState = {
     voiceSynthesis: LoadingState;
 };
 
-// Debug helper for test-driven approach
-const debugTest = {
-    testExpertLoading: (experts: Expert[], loading: boolean, selected: boolean) => {
-        console.log('TEST: Expert Loading');
-        console.log('- Experts array:', experts);
-        console.log('- Loading state:', loading);
-        console.log('- Selected state:', selected);
-        console.log('- Test result:', experts.length > 0 ? 'PASS ✅' : 'FAIL ❌');
-        return experts.length > 0;
-    },
-    testMockExpertFallback: (apiError: boolean, mockExperts: Expert[]) => {
-        console.log('TEST: Mock Expert Fallback');
-        console.log('- API Error occurred:', apiError);
-        console.log('- Mock experts available:', mockExperts.length > 0);
-        console.log('- Test result:', apiError && mockExperts.length > 0 ? 'PASS ✅' : 'FAIL ❌');
-        return apiError && mockExperts.length > 0;
-    }
-};
-
-// Mock expert data to ensure we always have fallback
-const mockExperts: Expert[] = [
-    {
-        id: 'exp_mock_1',
-        name: 'AI Climate Science Expert',
-        type: 'ai' as const,
-        background: 'Specializes in environmental science with expertise in climate change research and sustainability initiatives.',
-        expertise: ['Climate change', 'Biodiversity', 'Sustainability'],
-        stance: 'pro' as const,
-        perspective: 'I believe this is an important area that deserves our attention.',
-        identifier: 'AI-CSE4321',
-        voiceId: 'mock-voice-1'
-    } as Expert,
-    {
-        id: 'exp_mock_2',
-        name: 'AI Economics Expert',
-        type: 'ai' as const,
-        background: 'Specializes in economic policy analysis with a focus on resource allocation and market effects.',
-        expertise: ['Economic policy', 'Resource allocation', 'Market analysis'],
-        stance: 'con' as const,
-        perspective: 'I think we need to carefully examine the assumptions being made in this discussion.',
-        identifier: 'AI-ECO9876',
-        voiceId: 'mock-voice-2'
-    } as Expert,
-    {
-        id: 'exp_mock_3',
-        name: 'Eleanor Roosevelt',
-        type: 'historical' as const,
-        background: 'Eleanor Roosevelt was an American political figure, diplomat, and activist who served as the First Lady of the United States from 1933 to 1945.',
-        expertise: ['Human rights', 'Diplomacy', 'Social reform'],
-        stance: 'pro' as const,
-        perspective: 'I believe this is an important area that deserves our attention.',
-        voiceId: 'mock-voice-3'
-    } as Expert,
-    {
-        id: 'exp_mock_4',
-        name: 'Winston Churchill',
-        type: 'historical' as const,
-        background: 'Sir Winston Churchill was a British statesman, soldier, and writer who served as Prime Minister of the United Kingdom from 1940 to 1945.',
-        expertise: ['Leadership', 'Wartime strategy', 'International relations'],
-        stance: 'con' as const,
-        perspective: 'I think we need to carefully examine the assumptions being made in this discussion.',
-        voiceId: 'mock-voice-4'
-    } as Expert
-];
-
-// Test implementation of expert API for development mode
-const testGenerateExperts = async (topic: string, expertType: string): Promise<Expert[]> => {
-    console.log('TEST GENERATING EXPERTS for topic:', topic, 'type:', expertType);
-
-    // Simulate API processing time
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Generate expert for the specific topic to simulate real API functionality
-    const filteredMockExperts = mockExperts.filter((expert: Expert) => expert.type === expertType);
-
-    // Customize experts to the topic
-    const customizedExperts = filteredMockExperts.slice(0, 2).map(expert => {
-        const topicName = typeof topic === 'string'
-            ? (topic.startsWith('{') ? JSON.parse(topic).title : topic)
-            : 'the topic';
-
-        // Generate a unique ID
-        const uniqueId = `exp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-        return {
-            ...expert,
-            id: uniqueId,
-            // Customize perspective based on topic
-            perspective: expert.stance === 'pro'
-                ? `As someone who supports action on ${topicName}, I believe this is an important area that deserves our attention.`
-                : `I have reservations about some aspects of ${topicName} and think we need to carefully examine the assumptions being made.`
-        };
-    });
-
-    return customizedExperts;
-};
-
 export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
+    const router = useRouter();
+    const pathname = usePathname();
     const {
         topic,
         experts,
@@ -239,6 +128,22 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
     }>>([]);
     const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
     const [isContentAnalyzerOpen, setIsContentAnalyzerOpen] = useState(true);
+    const [fileStatus, setFileStatus] = useState({ message: 'No file selected', className: 'text-gray-400' });
+    const [suggestedHistoricalFigures, setSuggestedHistoricalFigures] = useState<Array<{
+        id: string;
+        name: string;
+        title: string;
+        description: string;
+        background: string;
+        expertise: string[];
+        perspective: string;
+        stance: 'pro' | 'con';
+        imageUrl?: string;
+        voiceId?: string;
+    }>>([]);
+    const [selectedHistoricalFigures, setSelectedHistoricalFigures] = useState<string[]>([]);
+    const [isLoadingHistoricalFigures, setIsLoadingHistoricalFigures] = useState(false);
+    const [showHistoricalFigureSelection, setShowHistoricalFigureSelection] = useState(false);
     const [steps, setSteps] = useState<StepState>({
         expertSelection: { state: 'idle' },
         topicInitialization: { state: 'idle' },
@@ -275,7 +180,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
     ) => {
         // If API server is not available, don't even try to make the request
         if (!MVP_CONFIG.apiServerAvailable) {
-            console.log(`API server not available, skipping request to ${endpoint}`);
             // Return mock successful response
             return { success: true, mock: true, data: {} };
         }
@@ -297,7 +201,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 return response.data;
             }
         } catch (error) {
-            console.error(`API request failed: ${error}`);
             throw error;
         }
     }, []);
@@ -314,514 +217,12 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         }));
     };
 
-    // Generate expert responses locally
-    const generateLocalExpertResponses = async (currentExperts: Expert[], currentMessages: Message[]) => {
-        console.log('Generating responses for experts:', currentExperts);
-
-        // Create a copy of messages for safety
-        const messagesCopy = [...currentMessages];
-        const newMessages: Message[] = [];
-
-        // Process each expert
-        await Promise.all(currentExperts.map(async (expert) => {
-            try {
-                console.log(`Generating response for ${expert.name}`);
-
-                // Create a direct fetch request to the API
-                const response = await fetch('/api/debate/response', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        expert,
-                        messages: messagesCopy,
-                        topic: topic || selectedTopic || 'General debate'
-                    }),
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error(`API error for ${expert.name}:`, response.status, errorText);
-                    throw new Error(`API request failed: ${response.status}`);
-                }
-
-                const data = await response.json();
-                console.log(`Response for ${expert.name}:`, data);
-
-                // Create the new message
-                const newMessage: Message = {
-                    id: uuidv4(),
-                    role: 'assistant',
-                    content: data.response,
-                    speaker: expert.name,
-                    // speakerId is not in the Message type, ensure it matches what's expected
-                    // If needed elsewhere, access the expert.id directly
-                    timestamp: new Date().toISOString()
-                };
-
-                // Add to our collection of new messages
-                newMessages.push(newMessage);
-
-            } catch (error) {
-                console.error(`Error generating response for ${expert.name}:`, error);
-
-                // Return a fallback response instead of throwing
-                const errorMessage: Message = {
-                    id: uuidv4(),
-                    role: 'assistant',
-                    content: `I apologize, but there was an error generating my response as ${expert.name}. ${error instanceof Error ? error.message : 'Unknown error'}`,
-                    speaker: expert.name,
-                    // Remove speakerId as it's not in the Message type
-                    timestamp: new Date().toISOString()
-                };
-
-                // Add error message to our collection
-                newMessages.push(errorMessage);
-            }
-        }));
-
-        // Only update the messages state if we have new messages
-        if (newMessages.length > 0) {
-            console.log('Adding new messages to state:', newMessages);
-
-            // Add all the new messages to the current messages
-            const updatedMessages = [...currentMessages, ...newMessages];
-
-            // Update the store with all messages at once
-            setMessages(updatedMessages);
-
-            // If voice synthesis is enabled, generate voices
-            if (useVoiceSynthesis) {
-                await handleVoiceSynthesis(newMessages, currentExperts);
-            }
-        }
-    };
-
-    // Handle expert type selection
-    const handleExpertTypeSelect = async (type: 'historical' | 'ai') => {
-        console.log(`Expert type selected: ${type}`);
-        // Make sure we update both the store and the local state
-        setExpertType(type);
-        setSelectedParticipantType(type);
-
-        // Show a confirmation message
-        showInfo('Expert Type Selected', `${type === 'historical' ? 'Historical Figures' : 'AI Subject Experts'} selected`);
-
-        // If we already have a topic, we can re-select experts based on the new type
-        if (topic || selectedTopic) {
-            // Clear existing experts
-            setExperts([]);
-            // Generate new experts with the selected type
-            await selectExperts();
-        }
-    };
-
-    // Handle topic selection from extracted topics
-    const handleTopicSelect = (topicTitle: string, topicData?: any) => {
-        console.log('Topic selected:', topicTitle, 'with data:', topicData);
-
-        // Make sure the title is not empty
-        if (!topicTitle || topicTitle.trim() === '') {
-            console.warn('Empty topic title provided');
-            showWarning('Invalid Topic', 'Please select a valid topic');
-            return;
-        }
-
-        // Update the user topic state
-        setUserTopic(topicTitle);
-
-        // Update the selected topic state
-        setSelectedTopic(topicTitle);
-
-        // Store the complete topic data in the store, not just the title
-        // This ensures arguments are available for expert generation
-        if (topicData) {
-            // Store as JSON string to preserve all data
-            const topicWithData = JSON.stringify({
-                title: topicTitle,
-                data: topicData
-            });
-            console.log('Setting topic in store with data:', topicWithData);
-            setTopic(topicWithData);
-        } else {
-            // Fallback to just the title if no data provided
-            console.log('Setting topic in store with title only:', topicTitle);
-            setTopic(topicTitle);
-        }
-
-        // Ensure participant type is set if not already selected
-        // Default to 'ai' experts when selecting from Suggested Debate Topics
-        if (!selectedParticipantType) {
-            console.log('Setting default participant type to ai experts');
-            setSelectedParticipantType('ai');
-            setExpertType('ai');
-        }
-
-        // Always use real API to generate experts regardless of environment
-        console.log('Will use API to generate real experts based on topic:', topicTitle);
-
-        // Ensure expert selection is shown after topic is selected
-        setShowExpertSelection(true);
-        setExpertsLoading(false);
-
-        // For debugging
-        setTimeout(() => {
-            console.log('After topic selection:');
-            console.log('- Topic in store:', topic);
-            console.log('- Selected Topic state:', selectedTopic);
-            console.log('- User Topic state:', userTopic);
-        }, 100);
-    };
-
-    // Initialize debate after topic selection
-    const initializeDebateWithTopic = async () => {
-        console.log('### DEBUG: initializeDebateWithTopic called ###');
-        console.log('- Topic from store:', topic);
-        console.log('- Selected Topic state:', selectedTopic);
-        console.log('- User Topic state:', userTopic);
-        console.log('- Participant Type:', selectedParticipantType);
-        console.log('- Experts Length:', experts.length);
-        console.log('- ExpertsLoading:', expertsLoading);
-        console.log('- ExpertsSelected:', expertsSelected);
-
-        // More robust check for topic with multiple fallbacks
-        let currentTopic = topic || selectedTopic || userTopic || '';
-
-        // Additional debug to identify the issue
-        console.log('Current topic before check:', currentTopic, typeof currentTopic);
-
-        // If the topic is a JSON string, parse it to get the title
-        if (typeof currentTopic === 'string' && currentTopic.startsWith('{') && currentTopic.includes('title')) {
-            try {
-                const parsedTopic = JSON.parse(currentTopic);
-                console.log('Parsed topic:', parsedTopic);
-                // Make sure we have the title after parsing
-                if (parsedTopic && parsedTopic.title) {
-                    // Keep the JSON string as currentTopic but log the title
-                    console.log('Using parsed title:', parsedTopic.title);
-                }
-            } catch (e) {
-                console.warn('Failed to parse topic JSON:', e);
-            }
-        }
-
-        if (!currentTopic || currentTopic.trim() === '') {
-            console.warn('Cannot initialize debate: missing topic', {
-                topic,
-                selectedTopic,
-                userTopic,
-                currentTopic
-            });
-            showWarning('Missing Topic', 'Please enter a debate topic first');
-            return;
-        }
-
-        // Ensure the topic is set in the store if needed
-        if (!topic && currentTopic) {
-            console.log('Setting topic in store:', currentTopic);
-            setTopic(currentTopic);
-            // Wait for state update to propagate
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        // Set default participant type if not set
-        if (!selectedParticipantType) {
-            console.log('Setting default participant type to ai experts');
-            setSelectedParticipantType('ai');
-            setExpertType('ai');
-            // Wait for state update to propagate
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        console.log('Initializing debate with topic:', currentTopic, 'and participant type:', selectedParticipantType || 'ai');
-        const newDebateId = uuidv4();
-        updateStepState('topicInitialization', 'loading', 'Initializing debate...');
-
-        try {
-            // Initialize directly with the generated debateId
-            initializeDebate(newDebateId, currentTopic);
-            updateStepState('topicInitialization', 'success', 'Debate initialized!');
-            showSuccess('Debate Initialized', 'Generating expert profiles...');
-
-            // If no experts are loaded, force expert generation
-            if (experts.length === 0) {
-                console.log("No experts found, generating experts for topic:", currentTopic);
-                setExpertsLoading(true);
-
-                try {
-                    // Call selectExperts to generate experts through the API
-                    // Pass the current topic directly to the function to avoid dependency on store state
-                    console.log("Calling selectExperts to generate experts via API");
-                    const expertPromise = selectExpertsWithTopic(currentTopic);
-
-                    // Add a timeout to prevent infinite loading
-                    const timeoutPromise = new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('Expert generation timed out')), 20000); // 20-second timeout
-                    });
-
-                    await Promise.race([expertPromise, timeoutPromise]);
-
-                    // Double-check that experts were loaded after API call completed
-                    if (experts.length === 0) {
-                        console.log("API call completed but no experts were loaded");
-                        // Show error since we don't want to use mock experts
-                        showWarning('Expert Generation Failed', 'Please try again or try a different topic');
-                    }
-                } catch (expertError) {
-                    console.error("Error generating experts:", expertError);
-                    showWarning('Expert Generation Failed', 'Please try again with a different topic');
-                } finally {
-                    // Ensure loading state is always cleared
-                    setExpertsLoading(false);
-                }
-            }
-
-            updateStepState('expertLoading', 'success', 'Experts selected successfully!');
-
-        } catch (error) {
-            console.error('Error initializing debate:', error);
-            // Always clear loading states
-            setExpertsLoading(false);
-
-            const appError = createError(
-                'DEBATE_INITIALIZATION_ERROR',
-                'Failed to initialize debate',
-                'high',
-                true,
-                { topic: currentTopic, expertType: selectedParticipantType || 'ai' }
-            );
-            handleError(appError);
-            updateStepState('topicInitialization', 'error', 'Failed to initialize debate');
-        }
-    };
-
-    // Create a version of selectExperts that takes a direct topic parameter
-    const selectExpertsWithTopic = async (directTopic: string) => {
-        console.log('Selecting experts with direct topic:', directTopic);
-        updateStepState('expertSelection', 'loading', 'Finding experts for this topic...');
-
-        if (!directTopic || directTopic.trim() === '') {
-            console.error('No topic provided for expert selection in selectExpertsWithTopic');
-            updateStepState('expertSelection', 'error', 'No topic provided');
-            showWarning('No Topic', 'Please enter a topic to select experts.');
-            return;
-        }
-
-        try {
-            // First check if API is accessible at all
-            const apiEndpoint = '/api/debate-experts';
-            console.log(`Checking if API endpoint is accessible: ${apiEndpoint}`);
-
-            // Parse topic for potential structured data
-            let topicTitle = directTopic;
-            let topicArguments: any[] = [];
-
-            if (typeof topicTitle === 'string' && topicTitle.startsWith('{') && topicTitle.includes('title')) {
-                try {
-                    const parsedTopic = JSON.parse(topicTitle);
-                    topicTitle = parsedTopic.title || topicTitle;
-
-                    if (parsedTopic.data && parsedTopic.data.arguments) {
-                        topicArguments = parsedTopic.data.arguments;
-                    }
-                } catch (e) {
-                    console.warn('Failed to parse topic as JSON:', e);
-                }
-            }
-
-            // Rest of the function is the same as selectExperts
-            // ... rest of the implementation same as selectExperts
-
-            // Check for API key
-            const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
-            console.log(`API key availability: ${apiKey ? 'Available' : 'Not available'}`);
-
-            // Set timeout for API request
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
-
-            // Construct proper request body for debate-experts API
-            const requestBody = {
-                action: 'select-experts',
-                topic: topicTitle,
-                expertType: expertType || 'ai',
-                count: 2
-            };
-
-            console.log('Request body:', JSON.stringify(requestBody));
-            console.log(`Using expert type: ${expertType || 'ai'} (from store: ${expertType})`);
-
-            try {
-                console.log(`Sending request to ${apiEndpoint}...`);
-                const response = await fetch(apiEndpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
-                    },
-                    body: JSON.stringify(requestBody),
-                    signal: controller.signal
-                });
-
-                clearTimeout(timeoutId);
-
-                console.log(`Response status: ${response.status}`);
-
-                if (response.ok) {
-                    const responseText = await response.text();
-                    console.log('Raw API response:', responseText.substring(0, 100) + '...');
-
-                    try {
-                        const data = JSON.parse(responseText);
-
-                        if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
-                            console.log(`Received ${data.experts.length} experts from API`);
-
-                            // Format experts properly
-                            const formattedExperts = data.experts.map((expert: any) => ({
-                                id: expert.id || uuidv4(),
-                                name: expert.name,
-                                expertise: expert.expertise || [],
-                                stance: expert.stance || 'neutral',
-                                background: expert.background || '',
-                                voiceId: expert.voiceId || undefined
-                            }));
-
-                            console.log('Formatted experts:', formattedExperts);
-                            setExperts(formattedExperts);
-                            setExpertsSelected(true); // Set this flag to true when experts are available
-                            updateStepState('expertSelection', 'success', 'Experts selected successfully');
-                            return formattedExperts;
-                        } else {
-                            console.warn('API response did not contain valid experts:', data);
-                            throw new Error('No experts found in API response');
-                        }
-                    } catch (error) {
-                        console.error('Error parsing API response:', error);
-                        throw new Error('Failed to parse API response');
-                    }
-                } else {
-                    const errorText = await response.text();
-                    console.error(`API returned error ${response.status}:`, errorText);
-                    throw new Error(`API error: ${response.status} ${errorText.substring(0, 100)}`);
-                }
-            } catch (error) {
-                console.error('Error calling debate-experts API:', error);
-                throw error; // Propagate error to outer handler
-            }
-        } catch (error) {
-            console.error('Expert selection error:', error);
-
-            // In production, we don't show sample experts - we just show an error
-            if (process.env.NODE_ENV === 'production') {
-                console.error('PRODUCTION MODE: Expert generation failed with no fallback');
-                showError(createError(
-                    'EXPERT_GENERATION_ERROR' as any, // Type assertion to fix the linter error
-                    'Failed to generate experts. Our systems encountered an issue processing your topic. Please try again later or try a different topic.',
-                    'high',
-                    true,
-                    error instanceof Error ? error.message : String(error)
-                ));
-                updateStepState('expertSelection', 'error', 'Failed to generate experts');
-                return;
-            }
-
-            // In development, we can fall back to mock experts
-            console.warn('DEVELOPMENT MODE: Using sample experts as fallback');
-            showWarning('Using Sample Experts', 'We encountered an issue generating custom experts for this topic. Using sample experts instead.');
-
-            // Use mock experts as fallback in development
-            const fallbackExperts = mockExperts.map(expert => ({
-                ...expert,
-                id: expert.id || uuidv4(),
-            }));
-
-            setExperts(fallbackExperts);
-            setExpertsSelected(true); // Set this flag to true even for mock experts
-            updateStepState('expertSelection', 'success', 'Sample experts loaded (fallback)');
-            return fallbackExperts;
-        }
-    };
-
-    // Update the original selectExperts function to use the new version
-    const selectExperts = async () => {
-        // Get current topic from store or state
-        const currentTopic = topic || selectedTopic || '';
-
-        if (!currentTopic) {
-            console.error('No topic provided for expert selection in selectExperts');
-            updateStepState('expertSelection', 'error', 'No topic provided');
-            showWarning('No Topic', 'Please enter a topic to select experts.');
-            return;
-        }
-
-        // Call the version that takes a direct topic parameter
-        return selectExpertsWithTopic(currentTopic);
-    };
-
-    // New helper function for voice assignment
-    const assignVoicesToExperts = async (selectedExperts: Expert[]) => {
-        updateStepState('voiceSynthesis', 'loading', 'Assigning voices to experts...');
-        try {
-            // Skip API calls if server is unavailable
-            if (!MVP_CONFIG.apiServerAvailable) {
-                console.log('API server unavailable, assigning mock voice IDs');
-                // Assign mock voice IDs locally
-                const expertsWithVoices = selectedExperts.map((expert, index) => {
-                    return {
-                        ...expert,
-                        voiceId: `mock-voice-${index + 1}`
-                    };
-                });
-                setExperts(expertsWithVoices);
-                updateStepState('voiceSynthesis', 'success', 'Mock voices assigned!');
-                showSuccess('Mock Voices', 'Voice synthesis is simulated (API unavailable)');
-                return;
-            }
-
-            const expertsWithVoices = await Promise.all(
-                selectedExperts.map(async (expert) => {
-                    const voiceResponse = await fetch('/api/voice', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'assign-voice',
-                            expertName: expert.name,
-                            expertType: expert.type
-                        })
-                    });
-
-                    if (!voiceResponse.ok) {
-                        throw new Error(`Failed to assign voice for ${expert.name}`);
-                    }
-
-                    const voiceData = await voiceResponse.json();
-                    return { ...expert, voiceId: voiceData.voiceId };
-                })
-            );
-
-            setExperts(expertsWithVoices);
-            updateStepState('voiceSynthesis', 'success', 'Voices assigned successfully!');
-            showSuccess('Voices Assigned', 'Voice synthesis is ready');
-        } catch (error) {
-            const appError = createError(
-                'VOICE_SYNTHESIS_ERROR',
-                'Failed to assign voices to experts',
-                'medium',
-                true
-            );
-            handleError(appError);
-            updateStepState('voiceSynthesis', 'error', 'Failed to assign voices');
-        }
-    };
-
-    // Add back the handleVoiceSynthesis function
-    const handleVoiceSynthesis = async (responses: any[], currentExperts: Expert[]) => {
+    // MOVED: handleVoiceSynthesis to be defined earlier
+    // Voice synthesis function
+    const handleVoiceSynthesis = useCallback(async (responses: any[], currentExperts: Expert[]) => {
         // Skip API calls if server is unavailable
         if (!MVP_CONFIG.apiServerAvailable) {
-            console.log('API server unavailable, skipping voice synthesis');
-            return;
+            return; // Just return if API is not available, don't assign mock voices
         }
 
         // For each response, synthesize voice if the expert has a voiceId
@@ -871,10 +272,602 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 handleError(appError);
             }
         }
-    };
+    }, [MVP_CONFIG.apiServerAvailable, showWarning, createError, handleError]);
+
+    // MOVED: selectExpertsWithTopic to be defined earlier
+    // Create a version of selectExperts that takes a direct topic parameter
+    const selectExpertsWithTopic = useCallback(async (directTopic: string): Promise<Expert[] | undefined> => {
+        updateStepState('expertSelection', 'loading', 'Finding experts for this topic...');
+
+        if (!directTopic || directTopic.trim() === '') {
+            updateStepState('expertSelection', 'error', 'No topic provided');
+            showWarning('No Topic', 'Please enter a topic to select experts.');
+            return;
+        }
+
+        try {
+            // First check if API is accessible at all
+            const apiEndpoint = '/api/debate-experts';
+
+            // Parse topic for potential structured data
+            let topicTitle = directTopic;
+            let topicArguments: any[] = [];
+
+            if (typeof topicTitle === 'string' && topicTitle.startsWith('{') && topicTitle.includes('title')) {
+                try {
+                    const parsedTopic = JSON.parse(topicTitle);
+                    console.log('Successfully parsed topic JSON:', parsedTopic);
+
+                    topicTitle = parsedTopic.title || topicTitle;
+
+                    if (parsedTopic.data && parsedTopic.data.arguments) {
+                        topicArguments = parsedTopic.data.arguments;
+                        console.log('Extracted topic arguments:', topicArguments);
+                    }
+                } catch (e) {
+                    console.error('Error parsing topic JSON:', e);
+                    console.log('Raw topic string that failed parsing:', topicTitle);
+                }
+            }
+
+            // Check for API key
+            const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
+
+            // Set timeout for API request
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 45000); // Increased to 45 seconds
+
+            // Construct proper request body for debate-experts API
+            const requestBody = {
+                action: 'select-experts',
+                topic: topicTitle,
+                topicArguments: topicArguments, // Include the extracted arguments
+                expertType: expertType || 'ai',
+                count: 2,
+                requireOpposing: true  // Explicitly request experts with opposing stances
+            };
+
+            console.log('Request body:', JSON.stringify(requestBody));
+            console.log(`Using expert type: ${expertType || 'ai'} (from store: ${expertType})`);
+
+            try {
+                const response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                console.log(`Response status: ${response.status}`);
+
+                if (response.ok) {
+                    const responseText = await response.text();
+                    console.log('Raw API response:', responseText.substring(0, 100) + '...');
+
+                    try {
+                        const data = JSON.parse(responseText);
+
+                        if (data.experts && Array.isArray(data.experts) && data.experts.length > 0) {
+                            // Format experts properly
+                            const formattedExperts = data.experts.map((expert: any, index: number) => ({
+                                id: expert.id || uuidv4(),
+                                name: expert.name,
+                                title: expert.title || `Expert on ${topicTitle}`,
+                                description: expert.description || '',
+                                background: expert.background || expert.description || `Expert with knowledge in ${topicTitle}`,
+                                imageUrl: expert.imageUrl || '',
+                                expertise: expert.expertise || [],
+                                perspective: expert.perspective || '',
+                                stance: expert.stance || (index === 0 ? 'pro' : 'con'), // First expert is pro, second is con if not already assigned
+                                voiceId: expert.voiceId || assignVoiceToExpert(expert.name, expert.expertise?.[0] || topicTitle) || null
+                            }));
+
+                            // Update experts in store
+                            setExperts(formattedExperts);
+                            setExpertsSelected(true);
+                            updateStepState('expertSelection', 'success', 'Experts selected successfully!');
+
+                            // Store the current topic in sessionStorage as a backup
+                            try {
+                                sessionStorage.setItem('last_debate_topic', directTopic);
+                                console.log('Stored topic in sessionStorage as backup');
+                            } catch (storageError) {
+                                console.warn('Could not store topic in sessionStorage:', storageError);
+                            }
+
+                            // Show success toast
+                            showSuccess('Experts Selected', 'Ready to start the debate!');
+
+                            console.log('Selected experts:', formattedExperts);
+                            return formattedExperts;
+                        } else {
+                            throw new Error('No experts returned from API');
+                        }
+                    } catch (parseError) {
+                        console.error('Error parsing API response:', parseError);
+                        throw new Error('Invalid API response format');
+                    }
+                } else {
+                    console.error('API responded with error status:', response.status);
+                    throw new Error(`API error: ${response.status}`);
+                }
+            } catch (fetchError) {
+                console.error('Error fetching experts:', fetchError);
+                throw fetchError;
+            }
+        } catch (error) {
+            console.error('Error selecting experts:', error);
+            updateStepState('expertSelection', 'error', 'Failed to select experts');
+
+            // Create structured error object
+            const appError = createError(
+                'EXPERT_SELECTION_ERROR',
+                'Failed to select experts for this topic',
+                'high',
+                true,
+                { topic: directTopic }
+            );
+            handleError(appError);
+            return;
+        }
+    }, [MVP_CONFIG.apiServerAvailable, expertType, setExperts, setExpertsSelected, handleError, showSuccess, createError, showWarning, updateStepState]);
+
+    // Fetch suggested historical figures for a topic
+    const fetchSuggestedHistoricalFigures = useCallback(async (topicTitle: string) => {
+        setIsLoadingHistoricalFigures(true);
+        updateStepState('expertSelection', 'loading', 'Finding relevant historical figures (this may take up to 45 seconds)...');
+
+        try {
+            let parsedTopicTitle = topicTitle;
+            let topicArguments: any[] = [];
+
+            // Parse topic if it's JSON
+            if (typeof topicTitle === 'string' && topicTitle.startsWith('{') && topicTitle.includes('title')) {
+                try {
+                    const parsedTopic = JSON.parse(topicTitle);
+                    parsedTopicTitle = parsedTopic.title || topicTitle;
+                    if (parsedTopic.data && parsedTopic.data.arguments) {
+                        topicArguments = parsedTopic.data.arguments;
+                    }
+                } catch (e) {
+                    console.warn('Error parsing topic JSON for historical figures:', e);
+                }
+            }
+
+            console.log(`Fetching historical figures for topic: "${parsedTopicTitle}"`);
+
+            const requestBody = {
+                action: 'suggest-historical-figures',
+                topic: parsedTopicTitle,
+                topicArguments: topicArguments,
+                count: 6, // Get more options for user to choose from
+                requireOpposing: true
+            };
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                console.log('Historical figures API request timing out after 45 seconds');
+                controller.abort();
+            }, 45000);
+
+            const response = await fetch('/api/debate-experts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY || ''}`
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Historical figures response:', data);
+                console.log('Number of figures returned:', data.historicalFigures?.length);
+
+                if (data.historicalFigures && Array.isArray(data.historicalFigures) && data.historicalFigures.length > 0) {
+                    // Format the historical figures
+                    const formattedFigures = data.historicalFigures.map((figure: any, index: number) => ({
+                        id: figure.id || uuidv4(),
+                        name: figure.name,
+                        title: figure.title || figure.role || `Historical Expert on ${parsedTopicTitle}`,
+                        description: figure.description || '',
+                        background: figure.background || figure.description || `Historical figure with expertise in ${parsedTopicTitle}`,
+                        expertise: figure.expertise || [],
+                        perspective: figure.perspective || '',
+                        stance: figure.stance || (index % 2 === 0 ? 'pro' : 'con'), // Alternate stances
+                        imageUrl: figure.imageUrl || '',
+                        voiceId: figure.voiceId || assignVoiceToExpert(figure.name, figure.expertise?.[0] || parsedTopicTitle) || null,
+                        timeperiod: figure.timeperiod || '', // Historical context
+                        notableWorks: figure.notableWorks || [], // Their famous works/contributions
+                        relevanceReason: figure.relevanceReason || '' // Why they're relevant to this topic
+                    }));
+
+                    console.log(`Formatted ${formattedFigures.length} historical figures for selection`);
+                    setSuggestedHistoricalFigures(formattedFigures);
+                    setShowHistoricalFigureSelection(true);
+                    updateStepState('expertSelection', 'success', 'Historical figures found!');
+                    showSuccess('Historical Figures Found', `Found ${formattedFigures.length} relevant historical figures for your topic`);
+                } else {
+                    console.warn('API returned invalid historical figures data:', data);
+                    throw new Error('No historical figures returned from API');
+                }
+            } else {
+                const errorText = await response.text();
+                console.error('API error response:', errorText);
+                throw new Error(`API error: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Error fetching historical figures:', error);
+            updateStepState('expertSelection', 'error', 'Failed to find historical figures');
+
+            // Handle specific error types
+            let errorMessage = 'Failed to find relevant historical figures for this topic';
+            if (error instanceof Error) {
+                if (error.name === 'AbortError') {
+                    errorMessage = 'Request timed out while finding historical figures. Please try again with a simpler topic.';
+                } else {
+                    errorMessage = error.message;
+                }
+            }
+
+            const appError = createError(
+                'HISTORICAL_FIGURES_ERROR',
+                errorMessage,
+                'high',
+                true,
+                { topic: topicTitle }
+            );
+            handleError(appError);
+
+            // Show fallback message
+            showWarning('Historical Figures Not Found', 'Try a different topic or use AI Subject Experts instead');
+        } finally {
+            setIsLoadingHistoricalFigures(false);
+        }
+    }, [updateStepState, showSuccess, showWarning, createError, handleError, assignVoiceToExpert]);
+
+    // Update the original selectExperts function to use the new version
+    const selectExperts = useCallback(async () => {
+        // Get current topic from store or state
+        const currentTopic = topic || selectedTopic;
+
+        if (!currentTopic || currentTopic.trim() === '') {
+            updateStepState('expertSelection', 'error', 'No topic provided');
+            showWarning('No Topic', 'Please enter a topic to select experts.');
+            return;
+        }
+
+        // Call the implementation with the current topic
+        return selectExpertsWithTopic(currentTopic);
+    }, [topic, selectedTopic, updateStepState, showWarning, selectExpertsWithTopic]);
+
+    // Generate expert responses locally
+    const generateLocalExpertResponses = useCallback(async (currentExperts: Expert[], currentMessages: Message[]) => {
+        console.log('Generating responses for experts:', currentExperts);
+
+        // Create a copy of messages for safety
+        const messagesCopy = [...currentMessages];
+        const newMessages: Message[] = [];
+
+        // Process each expert
+        await Promise.all(currentExperts.map(async (expert) => {
+            try {
+                console.log(`Generating response for ${expert.name}`);
+
+                // Create a direct fetch request to the API
+                const response = await fetch('/api/debate/response', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        expert,
+                        messages: messagesCopy,
+                        topic: topic || selectedTopic || 'General debate'
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API request failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                console.log(`Response for ${expert.name}:`, data);
+
+                // Create the new message
+                const newMessage: Message = {
+                    id: uuidv4(),
+                    role: 'assistant',
+                    content: data.response,
+                    speaker: expert.name,
+                    timestamp: new Date().toISOString()
+                };
+
+                // Add to our collection of new messages
+                newMessages.push(newMessage);
+
+            } catch (error) {
+                console.error(`Error generating response for ${expert.name}:`, error);
+
+                // Return a fallback response instead of throwing
+                const errorMessage: Message = {
+                    id: uuidv4(),
+                    role: 'assistant',
+                    content: `I apologize, but there was an error generating my response as ${expert.name}. ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    speaker: expert.name,
+                    timestamp: new Date().toISOString()
+                };
+
+                // Add error message to our collection
+                newMessages.push(errorMessage);
+            }
+        }));
+
+        // Only update the messages state if we have new messages
+        if (newMessages.length > 0) {
+            console.log('Adding new messages to state:', newMessages);
+
+            // Add all the new messages to the current messages
+            const updatedMessages = [...currentMessages, ...newMessages];
+
+            // Update the store with all messages at once
+            setMessages(updatedMessages);
+
+            // If voice synthesis is enabled, generate voices
+            if (useVoiceSynthesis) {
+                await handleVoiceSynthesis(newMessages, currentExperts);
+            }
+        }
+    }, [topic, selectedTopic, useVoiceSynthesis, handleVoiceSynthesis, setMessages]);
+
+    // Handle expert type selection
+    const handleExpertTypeSelect = useCallback(async (type: 'historical' | 'ai') => {
+        console.log(`Expert type selected: ${type}`);
+        // Make sure we update both the store and the local state
+        setExpertType(type);
+        setSelectedParticipantType(type);
+
+        // Show a confirmation message
+        showInfo('Expert Type Selected', `${type === 'historical' ? 'Historical Figures' : 'AI Subject Experts'} selected`);
+
+        // If we already have a topic, we can re-select experts based on the new type
+        if (topic || selectedTopic) {
+            // Clear existing experts
+            setExperts([]);
+            // Generate new experts with the selected type
+            await selectExperts();
+        }
+    }, [setExpertType, setSelectedParticipantType, showInfo, topic, selectedTopic, setExperts, selectExperts]);
+
+    // Handle topic selection from extracted topics
+    const handleTopicSelect = useCallback((topicTitle: string, topicData?: any) => {
+        console.log('Topic selected:', topicTitle, 'with data:', topicData);
+
+        // Make sure the title is not empty
+        if (!topicTitle || topicTitle.trim() === '') {
+            showWarning('Invalid Topic', 'Please select a valid topic');
+            return;
+        }
+
+        // Create a topic object with consistent structure
+        const topicWithMetadata = topicData ? {
+            title: topicTitle,
+            data: topicData
+        } : {
+            title: topicTitle,
+            data: {
+                arguments: [
+                    `${topicTitle} is an important topic to discuss.`,
+                    `There are multiple perspectives on ${topicTitle}.`,
+                    `Understanding ${topicTitle} requires careful consideration of evidence.`
+                ]
+            }
+        };
+
+        // Update all topic state synchronously to ensure consistency
+        const topicJSON = JSON.stringify(topicWithMetadata);
+
+        // Update the user topic state
+        setUserTopic(topicTitle);
+
+        // Update the selected topic state
+        setSelectedTopic(topicTitle);
+
+        // Store the complete topic data in the store
+        setTopic(topicJSON);
+
+        // Log the values we're setting to confirm
+        console.log('Setting topic values:');
+        console.log('- User Topic:', topicTitle);
+        console.log('- Selected Topic:', topicTitle);
+        console.log('- Topic in store (JSON):', topicJSON);
+
+        // Ensure participant type is set if not already selected
+        // Default to 'ai' experts when selecting from Suggested Debate Topics
+        if (!selectedParticipantType) {
+            setSelectedParticipantType('ai');
+            setExpertType('ai');
+        }
+
+        // Handle different flows based on expert type
+        if (selectedParticipantType === 'historical') {
+            console.log('Historical expert type detected - fetching suggested historical figures');
+            // For historical figures, fetch suggestions for user to choose from
+            fetchSuggestedHistoricalFigures(topicJSON);
+        } else {
+            console.log('AI expert type detected - proceeding with automatic expert generation');
+            // For AI experts, continue with automatic generation (existing behavior)
+            // Ensure expert selection is shown after topic is selected
+            setShowExpertSelection(true);
+            setExpertsLoading(false);
+        }
+    }, [setUserTopic, setSelectedTopic, setTopic, selectedParticipantType, setExpertType, setShowExpertSelection, setExpertsLoading, showWarning, fetchSuggestedHistoricalFigures]);
+
+    // Handle historical figure selection/deselection
+    const handleHistoricalFigureToggle = useCallback((figureId: string) => {
+        setSelectedHistoricalFigures(prev => {
+            if (prev.includes(figureId)) {
+                // Remove if already selected
+                return prev.filter(id => id !== figureId);
+            } else {
+                // Add if not selected (limit to 2)
+                if (prev.length >= 2) {
+                    showWarning('Selection Limit', 'You can select a maximum of 2 historical figures');
+                    return prev;
+                }
+                return [...prev, figureId];
+            }
+        });
+    }, [showWarning]);
+
+    // Handle finalizing historical figure selection and starting debate
+    const handleConfirmHistoricalFigures = useCallback(() => {
+        if (selectedHistoricalFigures.length < 2) {
+            showWarning('Selection Required', 'Please select at least 2 historical figures to debate');
+            return;
+        }
+
+        // Get the selected figures from the suggested list
+        const selectedFigures = suggestedHistoricalFigures.filter(figure =>
+            selectedHistoricalFigures.includes(figure.id)
+        );
+
+        if (selectedFigures.length !== selectedHistoricalFigures.length) {
+            showError(createError(
+                'SELECTION_ERROR',
+                'Error with historical figure selection',
+                'medium',
+                true
+            ));
+            return;
+        }
+
+        // Format the figures as Expert objects for the debate
+        const formattedExperts = selectedFigures.map((figure, index) => ({
+            id: figure.id,
+            name: figure.name,
+            title: figure.title,
+            description: figure.description,
+            background: figure.background,
+            imageUrl: figure.imageUrl || '',
+            expertise: figure.expertise,
+            perspective: figure.perspective,
+            stance: figure.stance || (index === 0 ? 'pro' : 'con'),
+            voiceId: figure.voiceId || assignVoiceToExpert(figure.name, figure.expertise?.[0] || 'history') || null
+        }));
+
+        console.log('Selected historical figures for debate:', formattedExperts);
+
+        // Set the experts in the store
+        setExperts(formattedExperts);
+        setExpertsSelected(true);
+
+        // Hide the selection UI
+        setShowHistoricalFigureSelection(false);
+
+        // Update state to show debate is ready
+        updateStepState('expertSelection', 'success', 'Historical figures selected!');
+        showSuccess('Historical Figures Selected', `${formattedExperts.map(e => e.name).join(' and ')} are ready to debate!`);
+
+    }, [selectedHistoricalFigures, suggestedHistoricalFigures, showWarning, showError, createError, setExperts, setExpertsSelected, setShowHistoricalFigureSelection, updateStepState, showSuccess, assignVoiceToExpert]);
+
+    // Initialize debate after topic selection
+    const initializeDebateWithTopic = useCallback(async () => {
+        console.log('### DEBUG: initializeDebateWithTopic called ###');
+
+        // Get all relevant topic information (prefer local state if store not updated yet)
+        const currentTopicFromStore = topic;
+        const currentTopicFromState = selectedTopic;
+
+        console.log('- Topic from store:', currentTopicFromStore);
+        console.log('- Selected Topic state:', currentTopicFromState);
+        console.log('- User Topic state:', userTopic);
+        console.log('- Participant Type:', selectedParticipantType);
+        console.log('- Experts Length:', experts.length);
+        console.log('- ExpertsLoading:', expertsLoading);
+        console.log('- ExpertsSelected:', expertsSelected);
+
+        // Use store topic first, fall back to selected topic if store is not yet updated
+        // This ensures we always have a topic value to work with
+        const effectiveTopic = currentTopicFromStore || (currentTopicFromState ? JSON.stringify({
+            title: currentTopicFromState,
+            data: {
+                arguments: [`${currentTopicFromState} is an important topic to discuss.`]
+            }
+        }) : null);
+
+        if (!effectiveTopic) {
+            console.warn("InitializeDebate called without a topic.");
+            return; // Should not happen if useEffect is set up correctly
+        }
+
+        const newDebateId = uuidv4();
+        updateStepState('topicInitialization', 'loading', 'Initializing debate...');
+
+        try {
+            // Initialize directly with the generated debateId and effective topic
+            initializeDebate(newDebateId, effectiveTopic);
+            updateStepState('topicInitialization', 'success', 'Debate initialized!');
+            showSuccess('Debate Initialized', 'Generating expert profiles...');
+
+            // If no experts are loaded, force expert generation
+            if (experts.length === 0) {
+                setExpertsLoading(true);
+
+                try {
+                    // Call selectExperts to generate experts through the API
+                    // Pass the effective topic directly to the function to avoid dependency on store state
+                    const expertPromise = selectExpertsWithTopic(effectiveTopic);
+
+                    // Add a timeout to prevent infinite loading
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('Expert generation timed out')), 20000); // 20-second timeout
+                    });
+
+                    await Promise.race([expertPromise, timeoutPromise]);
+
+                    // Double-check that experts were loaded after API call completed
+                    if (experts.length === 0) {
+                        // Show error since we don't want to use mock experts
+                        showWarning('Expert Generation Failed', 'Please try again or try a different topic');
+                    }
+                } catch (expertError) {
+                    showWarning('Expert Generation Failed', 'Please try again with a different topic');
+                } finally {
+                    setExpertsLoading(false);
+                }
+            }
+
+            updateStepState('expertLoading', 'success', 'Experts selected successfully!');
+
+        } catch (error) {
+            // Always clear loading states
+            setExpertsLoading(false);
+
+            const appError = createError(
+                'DEBATE_INITIALIZATION_ERROR',
+                'Failed to initialize debate',
+                'high',
+                true,
+                { topic: effectiveTopic, expertType: selectedParticipantType || 'ai' }
+            );
+            handleError(appError);
+            updateStepState('topicInitialization', 'error', 'Failed to initialize debate');
+        }
+    }, [topic, selectedTopic, userTopic, selectedParticipantType, experts.length, expertsLoading, expertsSelected, initializeDebate, showSuccess, handleError, updateStepState, selectExpertsWithTopic, showWarning, createError]);
 
     // Handle starting the discussion
-    const startDiscussion = async () => {
+    const startDiscussion = useCallback(async () => {
         if (!experts.length || isGenerating) return;
 
         setIsGenerating(true);
@@ -947,10 +940,10 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         } finally {
             setIsGenerating(false);
         }
-    };
+    }, [experts, isGenerating, topic, selectedTopic, setIsGenerating, updateStepState, setMessages, useVoiceSynthesis, handleVoiceSynthesis, setErrorMessage]);
 
     // Handle user input
-    const handleUserInput = async (text: string) => {
+    const handleUserInput = useCallback(async (text: string) => {
         if (text.trim() && !isGenerating && experts.length > 0) {
             // Create user message
             const userMessage: Message = {
@@ -987,29 +980,15 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 setIsGenerating(false);
             }
         }
-    };
-
-    // Update error message when store error changes
-    useEffect(() => {
-        if (storeError) {
-            setErrorMessage(storeError);
-            setError(null); // Clear store error after displaying
-        }
-    }, [storeError, setError]);
+    }, [messages, isGenerating, experts, setMessages, setIsGenerating, updateStepState, generateLocalExpertResponses, setErrorMessage]);
 
     // Scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Debug test effect to monitor experts state
-    useEffect(() => {
-        console.log('Expert state change detected');
-        debugTest.testExpertLoading(experts, expertsLoading, expertsSelected);
-    }, [experts, expertsLoading, expertsSelected]);
-
     // Handle file upload
-    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         event.preventDefault();
 
         // Clear previous loading state
@@ -1017,8 +996,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
         const file = event.target.files?.[0];
         if (!file) {
-            console.warn("No file selected");
-            showWarning('No File Selected', 'Please select a valid document file');
             return;
         }
 
@@ -1029,15 +1006,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
         // Check if this exact file was recently uploaded (global check, not per endpoint)
         if (lastRequestTime && (now - lastRequestTime < 5000)) {
-            console.info(`Recent duplicate file detected: ${file.name}`);
-
             // Update UI to show warning about duplicate
-            const fileDisplay = document.getElementById('selected-file-display');
-            if (fileDisplay) {
-                fileDisplay.textContent = `Recently processed: ${file.name} - using cached results`;
-                fileDisplay.classList.remove('text-gray-400', 'text-red-400');
-                fileDisplay.classList.add('text-yellow-400');
-            }
+            setFileStatus({ message: `Recently processed: ${file.name} - using cached results`, className: 'text-yellow-400' });
 
             showInfo('File Already Processed', 'This file was recently analyzed. Using cached results.');
 
@@ -1051,7 +1021,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         // Check file size (max 20MB)
         const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
         if (file.size > MAX_FILE_SIZE) {
-            console.warn("File too large:", file.size);
             showWarning('File Too Large', 'Please select a file smaller than 20MB');
             return;
         }
@@ -1071,28 +1040,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/analyze`
         ];
 
-        // Immediately prepare mock topics in case all endpoints fail
-        const mockTopics = [
-            {
-                title: `Climate Change (Mock Data for "${file.name}")`,
-                confidence: 0.95,
-                arguments: [
-                    "Climate change mitigation requires immediate global action",
-                    "Renewable energy adoption must accelerate to reduce carbon emissions",
-                    "Carbon pricing is an effective economic tool for climate action"
-                ]
-            },
-            {
-                title: "AI Regulation (Mock Data)",
-                confidence: 0.88,
-                arguments: [
-                    "AI development should be subject to international oversight",
-                    "Self-regulation by tech companies is insufficient for AI safety",
-                    "Privacy concerns in AI systems need stronger legal protections"
-                ]
-            }
-        ];
-
         try {
             let success = false;
             let responseData = null;
@@ -1100,8 +1047,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             formData.append('file', file);
 
             // Skip API calls completely if we know the server is unavailable
-            if (!MVP_CONFIG.apiServerAvailable || MVP_CONFIG.disableApiTesting || process.env.NEXT_PUBLIC_MOCK_API === 'true') {
-                console.log("API server unavailable or testing disabled. Using mock data directly.");
+            if (!MVP_CONFIG.apiServerAvailable) {
                 success = false; // Skip to fallback
             } else {
                 // Try each endpoint until one succeeds
@@ -1119,7 +1065,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                             const lastEndpointRequestTime = requestTracker.recentRequests.get(endpointThrottleKey);
 
                             if (lastEndpointRequestTime && (now - lastEndpointRequestTime < 3000)) {
-                                console.log(`Endpoint throttled for this file: ${endpointThrottleKey}`);
                                 // Skip this endpoint and continue to the next one
                                 continue;
                             }
@@ -1152,24 +1097,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                     if (responseData && Array.isArray(responseData.topics) && responseData.topics.length > 0) {
                                         success = true;
                                         break;
-                                    } else if (responseData && responseData.status === "success") {
-                                        // Endpoint exists but doesn't have proper implementation
-                                        console.info(`Endpoint ${endpoint} returns success but no topics - this is expected in development`);
-
-                                        // Add mock topics to the response to simulate a successful analysis
-                                        responseData.topics = mockTopics;
-                                        success = true;
-
-                                        // Update UI to show mock data is being used
-                                        const fileDisplay = document.getElementById('selected-file-display');
-                                        if (fileDisplay) {
-                                            fileDisplay.textContent = `${file.name} processed with sample topics`;
-                                            fileDisplay.classList.remove('text-gray-400', 'text-red-400');
-                                            fileDisplay.classList.add('text-yellow-400');
-                                        }
-
-                                        showInfo('Development Mode', 'Using sample topics since server API is simplified');
-                                        break; // Use this endpoint's response with our mock data
                                     }
                                 } catch (parseError) {
                                     console.error(`Error parsing JSON from ${endpoint}:`, parseError);
@@ -1195,20 +1122,17 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 // Use info level logging instead of error since we're gracefully handling this
                 console.info("Using fallback topics - API endpoints didn't return usable data");
 
-                // Always use mock data when server endpoints fail
-                console.log("Using mock topics data as fallback");
-                setExtractedTopics(mockTopics);
+                // Instead of using mock topics, show an error
+                showError(createError(
+                    'API_ERROR',
+                    'Document analysis failed: Could not retrieve topics from the server.',
+                    'medium',
+                    true,
+                    { fileName: file.name }
+                ));
                 setLoadingState('');
-
-                // Update UI to show success with mock data
-                const fileDisplay = document.getElementById('selected-file-display');
-                if (fileDisplay) {
-                    fileDisplay.textContent = `Using sample topics for: ${file.name}`;
-                    fileDisplay.classList.remove('text-gray-400', 'text-red-400');
-                    fileDisplay.classList.add('text-yellow-400');
-                }
-
-                showSuccess('Document Analysis', 'Using sample topics since server analysis is unavailable');
+                setExtractedTopics([]); // Ensure topics are cleared
+                setFileStatus({ message: `Analysis failed for: ${file.name}`, className: 'text-red-400' });
                 return;
             }
 
@@ -1217,23 +1141,13 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 setExtractedTopics(responseData.topics);
 
                 // Update UI to show success
-                const fileDisplay = document.getElementById('selected-file-display');
-                if (fileDisplay) {
-                    fileDisplay.textContent = `Successfully analyzed: ${file.name}`;
-                    fileDisplay.classList.remove('text-gray-400');
-                    fileDisplay.classList.add('text-green-400');
-                }
+                setFileStatus({ message: `Successfully analyzed: ${file.name}`, className: 'text-green-400' });
             } else {
                 console.warn("Document analysis returned invalid topics data structure:", responseData);
                 setExtractedTopics([]);
 
                 // Update UI to show failure
-                const fileDisplay = document.getElementById('selected-file-display');
-                if (fileDisplay) {
-                    fileDisplay.textContent = `Analysis failed: ${file.name}`;
-                    fileDisplay.classList.remove('text-green-400');
-                    fileDisplay.classList.add('text-red-400');
-                }
+                setFileStatus({ message: `Analysis failed: ${file.name}`, className: 'text-red-400' });
 
                 throw new Error('Document analysis returned an invalid data structure');
             }
@@ -1254,12 +1168,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             setExtractedTopics([]);
 
             // Update UI to show error
-            const fileDisplay = document.getElementById('selected-file-display');
-            if (fileDisplay) {
-                fileDisplay.textContent = `Error processing file: ${file.name}`;
-                fileDisplay.classList.remove('text-green-400', 'text-gray-400');
-                fileDisplay.classList.add('text-red-400');
-            }
+            setFileStatus({ message: `Error processing file: ${file.name}`, className: 'text-red-400' });
 
             // Create an additional error specifically for the toast
             const docAnalysisError = createError(
@@ -1275,19 +1184,14 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                 fileInputRef.current.value = '';
             }
         }
-    };
+    }, [requestTracker.recentRequests, setFileStatus, showInfo, extractedTopics, showWarning, setLoadingState, API_CONFIG?.baseUrl, MVP_CONFIG.apiServerAvailable, setExtractedTopics, showError, createError, handleError]);
 
     // Trigger file input click
-    const triggerFileUpload = () => {
+    const triggerFileUpload = useCallback(() => {
         console.log("Upload button clicked, triggering file input");
 
         // Reset any previous file selection display
-        const fileDisplay = document.getElementById('selected-file-display');
-        if (fileDisplay) {
-            fileDisplay.textContent = 'No file selected';
-            fileDisplay.classList.remove('text-green-400');
-            fileDisplay.classList.add('text-gray-400');
-        }
+        setFileStatus({ message: 'No file selected', className: 'text-gray-400' });
 
         // Reset the file input value to allow selecting the same file again
         if (fileInputRef.current) {
@@ -1295,75 +1199,22 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         }
 
         fileInputRef.current?.click();
-    };
-
-    // Function to load mock topics for testing
-    const loadMockTopics = () => {
-        console.log("Loading mock topics for testing");
-
-        const mockTopics = [
-            {
-                title: "Climate Change (Mock Data)",
-                confidence: 0.95,
-                arguments: [
-                    "Climate change mitigation requires immediate global action",
-                    "Renewable energy adoption must accelerate to reduce carbon emissions",
-                    "Carbon pricing is an effective economic tool for climate action",
-                    "Individual actions are important but insufficient without systemic change",
-                    "Climate justice must be central to any comprehensive solution"
-                ]
-            },
-            {
-                title: "AI Regulation (Mock Data)",
-                confidence: 0.88,
-                arguments: [
-                    "AI development should be subject to international oversight",
-                    "Self-regulation by tech companies is insufficient for AI safety",
-                    "Privacy concerns in AI systems need stronger legal protections",
-                    "Algorithmic bias can perpetuate and amplify social inequalities",
-                    "Transparency in AI decision-making systems should be mandatory"
-                ]
-            },
-            {
-                title: "Universal Basic Income (Mock Data)",
-                confidence: 0.82,
-                arguments: [
-                    "UBI could provide economic security in an increasingly automated economy",
-                    "Implementation costs may be offset by reduced bureaucracy and welfare administration",
-                    "Freedom from economic necessities could foster creativity and entrepreneurship",
-                    "Concerns about inflation and reduced work incentives need careful consideration",
-                    "Pilot programs show mixed but promising results on individual well-being"
-                ]
-            }
-        ];
-
-        setExtractedTopics(mockTopics);
-
-        // Update UI status
-        const fileDisplay = document.getElementById('selected-file-display');
-        if (fileDisplay) {
-            fileDisplay.textContent = 'Using mock topics for testing';
-            fileDisplay.classList.remove('text-gray-400', 'text-red-400');
-            fileDisplay.classList.add('text-green-400');
-        }
-
-        showSuccess('Mock Data', 'Loaded sample topics for testing');
-    };
+    }, [setFileStatus]);
 
     // Toggle content analyzer
-    const toggleContentAnalyzer = () => {
+    const toggleContentAnalyzer = useCallback(() => {
         setIsContentAnalyzerOpen(!isContentAnalyzerOpen);
-    };
+    }, [isContentAnalyzerOpen, setIsContentAnalyzerOpen]);
 
     // Function to handle ending the debate and showing summary
-    const handleEndDebate = () => {
+    const handleEndDebate = useCallback(() => {
         setShowSummary(true);
         // Scroll to the top to show the summary
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    }, [setShowSummary]);
 
     // Function to handle starting a new debate
-    const handleStartNewDebate = () => {
+    const handleStartNewDebate = useCallback(() => {
         // Reset all state
         reset();
         setShowSummary(false);
@@ -1378,6 +1229,12 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
         setExtractedTopics([]);
         setIsContentAnalyzerOpen(false);
 
+        // Reset historical figure selection states
+        setSuggestedHistoricalFigures([]);
+        setSelectedHistoricalFigures([]);
+        setIsLoadingHistoricalFigures(false);
+        setShowHistoricalFigureSelection(false);
+
         // Reset steps state
         Object.keys(steps).forEach(key => {
             updateStepState(key as keyof typeof steps, 'idle', '');
@@ -1385,156 +1242,52 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
         // Scroll to the top
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    }, [reset, setShowSummary, setUserTopic, setErrorMessage, setLoadingState, setExpertsSelected, setShowExpertSelection, setExpertsLoading, setIsLoading, setSelectedParticipantType, setExtractedTopics, setIsContentAnalyzerOpen, setSuggestedHistoricalFigures, setSelectedHistoricalFigures, setIsLoadingHistoricalFigures, setShowHistoricalFigureSelection, steps, updateStepState]);
 
-    // Add a debug state to show API status
-    const [debugInfo, setDebugInfo] = useState({
-        usingRealApi: false,
-        apiKeyFormat: '',
-        environment: ''
-    });
-
-    // Check API status on component mount
+    // Check for reset parameter and trigger reset if present
     useEffect(() => {
-        const checkApiStatus = async () => {
-            try {
-                const response = await fetch('/api/test-openai-real');
-                const data = await response.json();
-                setDebugInfo({
-                    usingRealApi: data.success,
-                    apiKeyFormat: data.apiKeyFormat || 'Unknown',
-                    environment: data.environment?.NODE_ENV || 'Unknown'
-                });
-                console.log('API Status:', data);
-            } catch (error) {
-                console.error('Error checking API status:', error);
+        // Check if URL contains reset=true parameter
+        if (typeof window !== 'undefined') {
+            const urlParams = new URLSearchParams(window.location.search);
+            const shouldReset = urlParams.get('reset');
+            if (shouldReset === 'true') {
+                handleStartNewDebate();
+                // Remove the reset parameter from URL to prevent repeated resets
+                const url = new URL(window.location.href);
+                url.searchParams.delete('reset');
+                window.history.replaceState({}, '', url.toString());
             }
-        };
-
-        // Only in development or if debug mode is enabled
-        if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEBUG_MODE === 'true') {
-            checkApiStatus();
         }
-    }, []);
+    }, [pathname, handleStartNewDebate]);
 
     // Add effect to load existing debate data if provided
     useEffect(() => {
         if (existingDebate) {
-            // Initialize debate with existing data
-            console.log('Loading existing debate:', existingDebate);
-
-            // Set the debate ID
-            const debateIdToUse = existingDebate.id || uuidv4();
-
-            // Initialize the debate with existing topic
-            initializeDebate(debateIdToUse, existingDebate.topic);
-
-            // Set the experts
-            if (existingDebate.experts && existingDebate.experts.length > 0) {
-                setExperts(existingDebate.experts);
-                setExpertsSelected(true);
-            }
-
-            // Set the expert type
-            if (existingDebate.expertType) {
-                setExpertType(existingDebate.expertType);
-                setSelectedParticipantType(existingDebate.expertType);
-            }
-
-            // Set the messages if available
-            if (existingDebate.messages && existingDebate.messages.length > 0) {
-                setMessages(existingDebate.messages);
-            }
-
-            // Set the selected topic for UI
-            setSelectedTopic(typeof existingDebate.topic === 'string' ? existingDebate.topic : JSON.parse(existingDebate.topic).title);
-
-            // Close the content analyzer as we're continuing an existing debate
-            setIsContentAnalyzerOpen(false);
-
-            // Set success states
-            updateStepState('topicInitialization', 'success', 'Debate loaded!');
-            updateStepState('expertSelection', 'success');
-            updateStepState('expertLoading', 'success', 'Experts loaded successfully!');
-
-            showSuccess('Debate Loaded', 'You can continue where you left off');
+            // Load existing debate data
+            // This is a placeholder and should be replaced with actual implementation
+            console.log('Loading existing debate data');
         }
     }, [existingDebate]);
 
-    // Add this useEffect after the existing useEffect hooks
-    // This will ensure the topic is synchronized between the local state and store
+    // useEffect hook to initialize the debate when topic and type are ready
     useEffect(() => {
-        // If we have a selectedTopic but no topic in the store, update the store
-        if (selectedTopic && !topic) {
-            console.log('Syncing selectedTopic to store:', selectedTopic);
-            setTopic(selectedTopic);
+        // Check if topic and type are set, and if we haven't already started loading/loaded experts
+        // Also check that debateId is not set (i.e., not loading an existing debate)
+        // SKIP automatic initialization for historical experts - they use manual selection
+        if (topic && selectedParticipantType && !debateId && experts.length === 0 && !isGenerating && !expertsLoading) {
+            if (selectedParticipantType === 'historical') {
+                console.log("Skipping automatic expert generation for historical figures - using manual selection");
+                return; // Skip automatic initialization for historical figures
+            }
+
+            console.log("useEffect triggered: Initializing debate with AI experts");
+            initializeDebateWithTopic();
         }
-
-        // Log state for debugging
-        if (selectedTopic || topic) {
-            console.log('Topic State Sync:');
-            console.log('- Topic in store:', topic);
-            console.log('- Selected Topic:', selectedTopic);
-            console.log('- User Topic:', userTopic);
-        }
-    }, [selectedTopic, topic, userTopic, setTopic]);
-
-    // Add a utility function to ensure topic is properly set
-    const ensureTopicSet = (providedTopic: string | null | undefined) => {
-        console.log('### Ensuring topic is set with:', providedTopic);
-
-        if (!providedTopic || providedTopic.trim() === '') {
-            console.warn('Cannot ensure topic is set - provided topic is empty');
-            return false;
-        }
-
-        // Update local states
-        setUserTopic(providedTopic);
-        setSelectedTopic(providedTopic);
-
-        // Update store
-        setTopic(providedTopic);
-
-        // Verify topic was set
-        console.log('Topic verification after setting:');
-        console.log('- Topic in store is now:', topic);
-        console.log('- Selected Topic is now:', selectedTopic);
-        console.log('- User Topic is now:', userTopic);
-
-        return true;
-    };
-
-    // Add a debug button to help with troubleshooting after the experts are shown
-    useEffect(() => {
-        console.log("Experts state changed:");
-        console.log("- Experts count:", experts.length);
-        console.log("- Experts loading:", expertsLoading);
-        console.log("- Experts selected:", expertsSelected);
-        console.log("- Messages count:", messages.length);
-
-        // Check if we have experts but the expertsSelected flag isn't set
-        if (experts.length > 0 && !expertsLoading && !expertsSelected) {
-            console.log("Experts are loaded but expertsSelected flag is not set - fixing");
-            setExpertsSelected(true);
-        }
-    }, [experts, expertsLoading, expertsSelected, messages.length]);
+    }, [topic, selectedParticipantType, experts.length, debateId, isGenerating, expertsLoading, initializeDebateWithTopic]);
 
     // Main render
     return (
         <div className="flex flex-col bg-gray-700 h-full max-w-4xl mx-auto">
-            {/* Debug indicator - only shown in development or if debug mode is enabled */}
-            {(process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEBUG_MODE === 'true') && (
-                <div className="fixed top-0 right-0 p-2 bg-slate-800 text-white text-xs z-50 opacity-80 rounded-bl">
-                    API: {debugInfo.usingRealApi ?
-                        <span className="text-green-400">REAL ✓</span> :
-                        <span className="text-red-400">MOCK ✗</span>}
-                    <br />
-                    Key: {debugInfo.apiKeyFormat}
-                    <br />
-                    Env: {debugInfo.environment}
-                </div>
-            )}
-
             {/* Show summary if requested */}
             {showSummary && messages.length > 0 && (
                 <div className="mb-8 p-6 bg-black border border-gray-800 rounded-lg">
@@ -1697,34 +1450,8 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                 };
 
                                                 // First, ensure the topic is properly set in all states
-                                                ensureTopicSet(userTopic);
-
                                                 // Then call handler for side effects
                                                 handleTopicSelect(userTopic, topicData);
-
-                                                // Increase timeout to ensure state is updated
-                                                setTimeout(() => {
-                                                    console.log('Checking topic before initialization (direct topic input):');
-                                                    console.log('- Topic in store:', topic);
-                                                    console.log('- Selected Topic:', selectedTopic);
-                                                    console.log('- User Topic:', userTopic);
-
-                                                    // Double-check that topic is set in at least one place
-                                                    if (topic || selectedTopic || userTopic) {
-                                                        console.log('Topic appears to be set, initializing debate...');
-                                                        initializeDebateWithTopic();
-                                                    } else {
-                                                        console.warn('Topic still not set properly before initialization (direct topic input)');
-                                                        // Force topic setting one more time as a final fallback
-                                                        const success = ensureTopicSet(userTopic);
-                                                        if (success) {
-                                                            console.log('Forced topic setting, now initializing debate...');
-                                                            initializeDebateWithTopic();
-                                                        } else {
-                                                            showWarning('Topic Error', 'Could not set topic properly. Please try again.');
-                                                        }
-                                                    }
-                                                }, 800);  // Increased timeout for more reliability
                                             }}
                                             disabled={!userTopic.trim()}
                                             className="mt-2 w-full bg-green-600 hover:bg-green-700"
@@ -1740,7 +1467,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                     <p className="text-sm text-muted-foreground mb-4">Upload a document, or provide a link to a YouTube video, or podcast to extract debate topics</p>
 
                                     {/* Integrated ContentUploader with all options */}
-                                    <ContentUploader />
+                                    <ContentUploader fileStatus={fileStatus} />
                                 </div>
                             </div>
 
@@ -1749,56 +1476,30 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                 <div className="mt-6">
                                     <h3 className="text-lg font-semibold mb-4">Suggested Debate Topics</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {extractedTopics.map((topic, index) => (
+                                        {extractedTopics.map((extractedTopic, index) => (
                                             <button
                                                 key={index}
                                                 onClick={() => {
                                                     // First ensure the topic is properly set in all states
-                                                    ensureTopicSet(topic.title);
-
                                                     // Then call handler for side effects
-                                                    handleTopicSelect(topic.title, topic);
-
-                                                    // Increase timeout to ensure state is updated
-                                                    setTimeout(() => {
-                                                        console.log('Checking topic before initialization (suggested topic):');
-                                                        console.log('- Topic in store:', topic);
-                                                        console.log('- Selected Topic:', selectedTopic);
-                                                        console.log('- User Topic:', userTopic);
-
-                                                        // Double-check that topic is set in at least one place
-                                                        if (topic || selectedTopic || userTopic) {
-                                                            console.log('Topic appears to be set, initializing debate...');
-                                                            initializeDebateWithTopic();
-                                                        } else {
-                                                            console.warn('Topic still not set properly before initialization (suggested topic)');
-                                                            // Force topic setting one more time as a final fallback
-                                                            const success = ensureTopicSet(topic.title);
-                                                            if (success) {
-                                                                console.log('Forced topic setting, now initializing debate...');
-                                                                initializeDebateWithTopic();
-                                                            } else {
-                                                                showWarning('Topic Error', 'Could not set topic properly. Please try again.');
-                                                            }
-                                                        }
-                                                    }, 800);  // Increased timeout for more reliability
+                                                    handleTopicSelect(extractedTopic.title, extractedTopic);
                                                 }}
-                                                className={`card p-4 text-left hover:bg-accent transition-colors ${selectedTopic === topic.title ? 'border-2 border-primary' : 'border border-border'}`}
+                                                className={`card p-4 text-left hover:bg-accent transition-colors ${selectedTopic === extractedTopic.title ? 'border-2 border-primary' : 'border border-border'}`}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <h4 className="font-medium text-md">{topic.title}</h4>
+                                                    <h4 className="font-medium text-md">{extractedTopic.title}</h4>
                                                     <span className="text-xs px-2 py-1 rounded-full bg-muted text-foreground">
-                                                        {Math.round(topic.confidence * 100)}% confidence
+                                                        {Math.round(extractedTopic.confidence * 100)} confidence
                                                     </span>
                                                 </div>
                                                 <div className="my-2">
                                                     <div className="text-sm text-muted-foreground mb-1">Key arguments:</div>
                                                     <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
-                                                        {topic.arguments.slice(0, 2).map((arg, i) => (
+                                                        {extractedTopic.arguments.slice(0, 2).map((arg, i) => (
                                                             <li key={i} className="truncate">{arg}</li>
                                                         ))}
-                                                        {topic.arguments.length > 2 && (
-                                                            <li className="text-muted-foreground">+{topic.arguments.length - 2} more arguments</li>
+                                                        {extractedTopic.arguments.length > 2 && (
+                                                            <li className="text-muted-foreground">+{extractedTopic.arguments.length - 2} more arguments</li>
                                                         )}
                                                     </ul>
                                                 </div>
@@ -1825,8 +1526,125 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                         </div>
                     )}
 
+                    {/* Historical Figure Selection */}
+                    {showHistoricalFigureSelection && selectedParticipantType === 'historical' && topic && (
+                        <div className="space-y-6 mt-8">
+                            <div className="text-center">
+                                <h3 className="text-2xl font-bold text-white mb-2">Select Historical Figures</h3>
+                                <p className="text-gray-300">Choose 2 historical figures who are relevant to your topic to debate</p>
+                                <p className="text-sm text-gray-400 mt-1">
+                                    Selected: {selectedHistoricalFigures.length}/2
+                                </p>
+                            </div>
+
+                            {isLoadingHistoricalFigures ? (
+                                <div className="flex flex-col items-center justify-center py-12">
+                                    <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                                    <p className="text-white text-center font-semibold">Finding relevant historical figures...</p>
+                                    <p className="text-sm text-yellow-400 mt-2 text-center">⏳ This may take up to 45 seconds while we search historical records</p>
+                                    <p className="text-xs text-gray-400 mt-1 text-center">We're analyzing your topic to find the most relevant historical experts with opposing viewpoints</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {suggestedHistoricalFigures.map((figure) => {
+                                            const isSelected = selectedHistoricalFigures.includes(figure.id);
+                                            return (
+                                                <button
+                                                    key={figure.id}
+                                                    onClick={() => handleHistoricalFigureToggle(figure.id)}
+                                                    className={cn(
+                                                        "p-4 rounded-lg border text-left transition-all hover:shadow-lg",
+                                                        isSelected
+                                                            ? "border-primary bg-primary/10 ring-2 ring-primary"
+                                                            : "border-gray-600 bg-gray-800 hover:bg-gray-700",
+                                                        figure.stance === 'pro'
+                                                            ? 'border-l-4 border-l-green-500'
+                                                            : 'border-l-4 border-l-red-500'
+                                                    )}
+                                                >
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <h4 className="font-semibold text-white text-lg">{figure.name}</h4>
+                                                        {isSelected && (
+                                                            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                                                                <span className="text-white text-xs">✓</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <p className="text-sm text-gray-300 mb-2">{figure.title}</p>
+
+                                                    {figure.description && (
+                                                        <p className="text-xs text-gray-400 mb-3 line-clamp-3">{figure.description}</p>
+                                                    )}
+
+                                                    {figure.expertise && figure.expertise.length > 0 && (
+                                                        <div className="mb-2">
+                                                            <p className="text-xs text-gray-500 mb-1">Expertise:</p>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {figure.expertise.slice(0, 3).map((skill, index) => (
+                                                                    <span key={index} className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
+                                                                        {skill}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="flex items-center justify-between mt-3">
+                                                        <span className={cn(
+                                                            "text-xs px-2 py-1 rounded-full",
+                                                            figure.stance === 'pro'
+                                                                ? "bg-green-900/50 text-green-300 border border-green-700"
+                                                                : "bg-red-900/50 text-red-300 border border-red-700"
+                                                        )}>
+                                                            {figure.stance === 'pro' ? 'Supporting' : 'Opposing'}
+                                                        </span>
+
+                                                        {(figure as any).timeperiod && (
+                                                            <span className="text-xs text-gray-500">
+                                                                {(figure as any).timeperiod}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Action buttons */}
+                                    <div className="flex justify-center gap-4 mt-6">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setShowHistoricalFigureSelection(false);
+                                                setSuggestedHistoricalFigures([]);
+                                                setSelectedHistoricalFigures([]);
+                                            }}
+                                        >
+                                            <ArrowLeft className="mr-2 h-4 w-4" />
+                                            Back to Topic Selection
+                                        </Button>
+
+                                        <Button
+                                            onClick={handleConfirmHistoricalFigures}
+                                            disabled={selectedHistoricalFigures.length < 2}
+                                            className="bg-green-600 hover:bg-green-700"
+                                            size="lg"
+                                        >
+                                            Start Debate with Selected Figures
+                                            {selectedHistoricalFigures.length > 0 && (
+                                                <span className="ml-2">({selectedHistoricalFigures.length}/2)</span>
+                                            )}
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
                     {/* Meet Experts Button */}
-                    {topic && !experts.length && !showExpertSelection && (
+                    {topic && !experts.length && !showExpertSelection && !showHistoricalFigureSelection && (
                         <div className="flex justify-center my-8">
                             <Button
                                 onClick={() => {
@@ -1925,7 +1743,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                         error: string | null;
                                                         data?: any;
                                                         rawResponse?: string;
-                                                    }
+                                                    };
 
                                                     const results: Record<string, ApiTestResult> = {};
 
@@ -2014,7 +1832,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
                                                             if (response.ok) {
                                                                 const responseText = await response.text();
-                                                                console.log(`Raw response from ${endpoint} (first 100 chars):`, responseText.substring(0, 100) + '...');
+                                                                console.log(`Raw response from ${endpoint}:`, responseText.substring(0, 100) + '...');
 
                                                                 try {
                                                                     const data = JSON.parse(responseText);
@@ -2220,7 +2038,7 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                                                             } catch (parseError) {
                                                                                 console.error(`Retry: Error parsing API response from ${endpoint}:`, parseError);
                                                                                 console.error('Retry: Raw response that failed to parse:', rawText);
-                                                                                lastError = new Error(`Parse error: ${parseError.message}`);
+                                                                                lastError = new Error(`Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`); // Check type before accessing message
                                                                             }
                                                                         } else {
                                                                             console.warn(`Retry: API returned error status: ${response.status}`);
@@ -2303,52 +2121,6 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
                                             'Start Debate on Selected Topic'
                                         )}
                                     </Button>
-
-                                    {/* Debug info in development mode */}
-                                    {process.env.NODE_ENV !== 'production' && (
-                                        <div className="border border-yellow-400 rounded p-2 mt-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 text-sm w-full max-w-md">
-                                            <p className="font-semibold mb-1">Debug Info:</p>
-                                            <ul className="list-disc list-inside space-y-1">
-                                                <li>Experts selected: {experts.length}</li>
-                                                <li>Messages: {messages.length}</li>
-                                                <li>Topic: {topic || 'None'}</li>
-                                                <li>
-                                                    <Button
-                                                        variant="link"
-                                                        size="sm"
-                                                        className="p-0 h-auto text-yellow-600 dark:text-yellow-400 underline"
-                                                        onClick={() => {
-                                                            // Force a direct API call
-                                                            console.log('Testing direct API call');
-                                                            fetch('/api/debate/response', {
-                                                                method: 'POST',
-                                                                headers: { 'Content-Type': 'application/json' },
-                                                                body: JSON.stringify({
-                                                                    expert: experts[0],
-                                                                    messages: [{
-                                                                        role: 'user',
-                                                                        content: `Test topic: ${topic || 'General debate'}`
-                                                                    }],
-                                                                    topic: topic || 'General debate'
-                                                                })
-                                                            })
-                                                                .then(res => res.json())
-                                                                .then(data => {
-                                                                    console.log('API test response:', data);
-                                                                    alert(`API Response: ${data.response ? 'Success' : 'Failed'}`);
-                                                                })
-                                                                .catch(err => {
-                                                                    console.error('API test error:', err);
-                                                                    alert(`API Error: ${err.message}`);
-                                                                });
-                                                        }}
-                                                    >
-                                                        Test API
-                                                    </Button>
-                                                </li>
-                                            </ul>
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -2421,4 +2193,4 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             </div>
         </div>
     );
-} 
+}

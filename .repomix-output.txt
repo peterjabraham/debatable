@@ -608,7 +608,7 @@ To support multiple users:
 **1** **Index Firestore Queries**:
 	* Firestore performs best with **indexed queries**.
 	* Use **Firestore rules** to optimize security & performance.
-**2** **Paginate Older Messages**: const fetchOldMessages = async (debateID, lastVisibleMessage) => {
+**2** **Paginate Older Messages**:const fetchOldMessages = async (debateID, lastVisibleMessage) => {
 3     const q = query(collection(db, `debates/${debateID}/messages`),
 4                     orderBy("timestamp"),
 5                     startAfter(lastVisibleMessage),

@@ -1,0 +1,124 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Backend Architecture Overview
+
+This rule provides a high-level understanding of the Debate-Able application's architecture. It describes the main components, their interactions, and data flows.
+
+## System Components
+
+### Client Side
+- **React Frontend**: Main UI interface
+  - **UI Components**: Reusable UI elements with URL validation indicators
+  - **Voice Controls**: Interface for voice-based interactions
+  - **Theme Provider**: Manages application theming
+  - **Error Boundaries**: Handles client-side error cases
+  - **React Hooks**: Custom hooks for state and API interactions
+
+### Server Side
+- **Next.js API Routes**: Server-side endpoints handling various application operations
+
+#### Content Processing
+- **Document Parser**: Processes uploaded documents
+- **Link Processor**: Handles external link content
+- **Media Processor**: Processes media files
+- **Topic Extractor**: Extracts key topics from content (uses OpenAI API)
+
+#### AI Engine
+- **Expert Generator**: Creates expert profiles for debates
+- **Expert Response Generator**: Generates expert responses
+- **Debate Manager**: Coordinates debate flow and state
+- **Context Manager**: Maintains context for AI responses
+- **Debate Summarizer**: Creates summaries of debates
+
+#### Reading Recommendations System
+- **Perplexity API Integration**: Fetches diverse reading materials on debate topics
+- **URL Validation Engine**: Validates recommended links for accessibility and reliability
+  - **Concurrent URL Validation**: Parallel HEAD requests to verify link availability
+  - **Smart Filtering**: Removes obviously fake URLs (example.com, placeholders)
+  - **Timeout Management**: 10-second validation timeout per URL
+  - **Redirect Handling**: Accepts 301/302 redirects as valid URLs
+- **Reddit Community Integration**: Provides stable subreddit URLs instead of specific post links
+- **Source Diversification**: Ensures balanced representation from academic, media, and community sources
+
+#### Data Storage
+- **Firebase Admin SDK**: Server-side Firebase access
+- **Firestore Collections**: Database collections for app data
+- **Client Libraries**: Client-side Firebase access
+- **Mock Implementations**: Test doubles for development/testing
+
+#### Server Middleware
+- **Next Auth**: Authentication system
+- **Rate Limiting**: Controls API request rates
+- **Error Handling**: Manages server-side errors
+- **Response Caching**: Caches responses for performance
+
+### External Services
+- **OpenAI API**: Used for AI-based text generation and analysis
+- **Perplexity API**: AI service for recommended reading generation with enhanced prompting for URL reliability
+- **Firebase Services**: Cloud database and authentication
+- **ElevenLabs API**: Voice synthesis service
+- **Node-Fetch**: Server-side HTTP client for URL validation
+
+## Key Data Flows
+
+1. **Content Processing Flow**:
+   - Content (docs, links, media) → Parsers → Topic Extractor
+   - Topic Extractor → Expert Generator
+
+2. **Debate Flow**:
+   - API → Debate Manager → Response Generator → Firestore Collections
+   - Context Manager → Response Generator
+   - Expert Generator → Response Generator
+
+3. **Reading Recommendations Flow**:
+   - Topic → Perplexity API → Raw Recommendations
+   - Raw Recommendations → URL Validation Engine → Validated Results
+   - Validated Results → UI with Status Indicators
+
+4. **Authentication Flow**:
+   - Auth middleware validates requests to API routes
+   - Auth connects to Firebase for user management
+
+5. **External AI Services**:
+   - Expert Generator, Response Generator, Topic Extractor, and Summarizer use OpenAI API
+   - Reading Recommendations use Perplexity API with enhanced URL validation
+
+6. **Voice Synthesis**:
+   - Voice Controls → API → ElevenLabs API
+
+## Performance Considerations
+
+### URL Validation Performance
+- **Parallel Processing**: Multiple URLs validated concurrently to minimize total time
+- **Timeout Controls**: 10-second per-URL timeout prevents hanging requests
+- **Smart Pre-filtering**: Removes obviously invalid URLs before HTTP requests
+- **HEAD Requests**: Uses HEAD instead of GET to avoid downloading content
+- **Graceful Degradation**: System continues working even if validation fails
+
+### Reading Recommendations Performance
+- **Caching Strategy**: Validated URLs could be cached to avoid re-validation
+- **Reddit Stability**: Subreddit URLs are more stable than individual post links
+- **Source Balancing**: Ensures diverse source types for comprehensive coverage
+
+## Critical Components
+
+The most critical components for application performance and stability are:
+- The AI Engine subsystem (especially Response Generator)
+- Firebase data storage (particularly for debate state)
+- Content Processing pipeline (for initial content analysis)
+- **URL Validation Engine** (for reliable reading recommendations)
+- **Perplexity API Integration** (for external content recommendations)
+
+## Architecture Notes
+
+- Client-side state is managed through React hooks that interface with Firebase client libraries
+- Error handling exists at multiple levels (client error boundaries, server middleware)
+- Firebase is used both directly from the client and through the server (Admin SDK)
+- Mock implementations can substitute for real services during development and testing
+- **URL validation adds 5-15 seconds to reading recommendation loading but ensures link reliability**
+- **Reddit integration prioritizes community stability over specific discussion links**
+- **All external API integrations include comprehensive error handling and fallback mechanisms**
+

@@ -1,0 +1,128 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Tech Stack and Environment Setup
+
+This rule provides information about the technical stack, versioning, and environment setup for the Debate-able application.
+
+## Compatible Versions
+
+- **Next.js**: 15.0.0
+- **Node.js**: 20.x
+- **React**: 18.2.0
+- **TypeScript**: 5.3.3
+
+## Frontend Technologies
+
+- **Next.js App Router**: For server-side and client-side rendering
+- **TanStack Query**: Data fetching and state management
+- **Zustand**: Client-side state management
+- **Tailwind CSS**: Styling
+- **Shadcn UI**: UI component library
+- **Lucide React**: Icon library (includes CheckCircle, AlertTriangle, HelpCircle for URL validation)
+
+## Backend Technologies
+
+- **Next.js API Routes**: Serverless functions for API endpoints
+- **NextAuth.js**: Authentication
+- **Firebase Admin SDK**: Server-side Firebase interactions
+- **Node-Fetch**: Server-side HTTP client for URL validation and external API calls
+
+## External Services Integration
+
+- **OpenAI**: Debate content generation
+- **Perplexity**: Research and citation data with enhanced URL validation
+- **Firestore**: Database for storing debates and user data
+- **ElevenLabs**: Voice synthesis (optional)
+
+## Development Tooling
+
+- **TypeScript**: Static typing
+- **ESLint**: Code linting
+- **Prettier**: Code formatting
+- **Vitest**: Testing framework
+
+## New Dependencies Added
+
+### URL Validation System
+- **node-fetch**: Required for server-side URL validation using HEAD requests
+- **AbortController**: Built-in Node.js feature used for request timeouts
+- **User-Agent Headers**: Custom user agent for URL validation requests
+
+## Required Environment Variables
+
+```
+# Basic configuration
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your_secret_key
+
+# Auth providers
+GITHUB_ID=your_github_client_id
+GITHUB_SECRET=your_github_client_secret
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# OpenAI API
+OPENAI_API_KEY=your_openai_api_key
+
+# Perplexity API (Enhanced with URL validation)
+PERPLEXITY_API_KEY=your_perplexity_api_key
+
+# Firebase configuration
+FIREBASE_PROJECT_ID=your_firebase_project_id
+FIREBASE_SERVICE_ACCOUNT_KEY_PATH=./your-credentials.json
+
+# Optional: ElevenLabs for voice synthesis
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+```
+
+## Performance Considerations
+
+### URL Validation Performance
+- **Network Requirements**: URL validation requires outbound HTTP access for HEAD requests
+- **Timeout Configuration**: 10-second timeout per URL validation (configurable)
+- **Parallel Processing**: Multiple URLs validated concurrently to minimize total time
+- **Bandwidth Usage**: HEAD requests minimize bandwidth compared to GET requests
+
+### API Rate Limits
+- **Perplexity API**: Enhanced prompting may use more tokens but provides better URL quality
+- **OpenAI API**: Unchanged usage patterns
+- **URL Validation**: No rate limits for external URL validation (uses standard HTTP)
+
+## Development Setup
+
+1. Clone the repository
+2. Install dependencies with `npm install`
+3. Set up environment variables (.env.local)
+4. Run the development server with `npm run dev`
+
+## Production Considerations
+
+### URL Validation in Production
+- **Network Security**: Ensure production environment allows outbound HTTP/HTTPS requests
+- **Firewall Configuration**: Allow requests to external domains for URL validation
+- **Error Handling**: URL validation failures are handled gracefully and don't break the application
+- **Performance Monitoring**: Monitor URL validation response times in production
+
+### Deployment Requirements
+- **Node.js Environment**: Ensure node-fetch is available in production environment
+- **Network Connectivity**: Production servers need internet access for URL validation
+- **DNS Resolution**: Ensure production environment can resolve external domain names
+- **SSL/TLS**: Production should support HTTPS requests for secure URL validation
+
+## Security Considerations
+
+### URL Validation Security
+- **Request Headers**: Uses safe user agent string to identify validation requests
+- **No Credentials**: URL validation requests don't include authentication headers
+- **Timeout Protection**: 10-second timeout prevents hanging connections
+- **Error Isolation**: URL validation errors don't propagate to main application flow
+
+### External API Security
+- **API Key Protection**: All API keys stored as environment variables
+- **Request Validation**: Input validation before making external API calls
+- **Rate Limiting**: Respect external API rate limits to prevent blocks
+- **Error Handling**: Secure error messages that don't expose internal details
+

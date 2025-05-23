@@ -23,7 +23,7 @@ export function AppHeader({ showNav = true, currentPage = 'home' }: AppHeaderPro
                             Home
                         </Link>
                         <Link
-                            href="/app/debate"
+                            href="/app/debate?reset=true"
                             className={`text-xs font-medium ${currentPage === 'debate' ? 'text-primary' : 'text-gray-300 hover:text-primary'} transition-colors`}
                         >
                             New Debate

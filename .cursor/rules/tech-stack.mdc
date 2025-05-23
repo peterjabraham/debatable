@@ -1,0 +1,78 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Tech Stack and Environment Setup
+
+This rule provides information about the technical stack, versioning, and environment setup for the Debate-able application.
+
+## Compatible Versions
+
+- **Next.js**: 15.0.0
+- **Node.js**: 20.x
+- **React**: 18.2.0
+- **TypeScript**: 5.3.3
+
+## Frontend Technologies
+
+- **Next.js App Router**: For server-side and client-side rendering
+- **TanStack Query**: Data fetching and state management
+- **Zustand**: Client-side state management
+- **Tailwind CSS**: Styling
+- **Shadcn UI**: UI component library
+
+## Backend Technologies
+
+- **Next.js API Routes**: Serverless functions for API endpoints
+- **NextAuth.js**: Authentication
+- **Firebase Admin SDK**: Server-side Firebase interactions
+
+## External Services Integration
+
+- **OpenAI**: Debate content generation
+- **Perplexity**: Research and citation data
+- **Firestore**: Database for storing debates and user data
+- **ElevenLabs**: Voice synthesis (optional)
+
+## Development Tooling
+
+- **TypeScript**: Static typing
+- **ESLint**: Code linting
+- **Prettier**: Code formatting
+- **Vitest**: Testing framework
+
+## Required Environment Variables
+
+```
+# Basic configuration
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your_secret_key
+
+# Auth providers
+GITHUB_ID=your_github_client_id
+GITHUB_SECRET=your_github_client_secret
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# OpenAI API
+OPENAI_API_KEY=your_openai_api_key
+
+# Perplexity API
+PERPLEXITY_API_KEY=your_perplexity_api_key
+
+# Firebase configuration
+FIREBASE_PROJECT_ID=your_firebase_project_id
+FIREBASE_SERVICE_ACCOUNT_KEY_PATH=./your-credentials.json
+
+# Optional: ElevenLabs for voice synthesis
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+```
+
+## Development Setup
+
+1. Clone the repository
+2. Install dependencies with `npm install`
+3. Set up environment variables (.env.local)
+4. Run the development server with `npm run dev`
+

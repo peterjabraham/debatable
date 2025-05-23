@@ -1,0 +1,194 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Project Code Overview
+
+## UI Components by Section
+
+This section lists all UI components found in the `src/components/` directory, categorized by their respective subdirectories.
+
+### General Components (`src/components/`)
+*   `UserNavigation.tsx`
+*   `ThinkingIndicator.tsx`
+*   `AppHeader.tsx`
+*   `ThemeProvider.tsx`
+*   `ThemeToggle.tsx`
+
+### Auth Components (`src/components/auth/`)
+*   `LogoutButton.tsx`
+*   `SessionProvider.tsx` *(Note: This file was reported as very small and might need review)*
+
+### Content Processing Components (`src/components/content-processing/`)
+*   `ContentUploader.tsx`
+
+### Debate Components (`src/components/debate/`)
+*   `ReadingListItem.tsx` *(Enhanced with URL validation indicators, status icons, and warning messages)*
+*   `DebateSummary.tsx`
+*   `DebatePanel.tsx`
+*   `ExpertCard.tsx`
+*   `MessageBubble.tsx`
+*   `ExpertTypeSelector.tsx`
+*   `ExpertProfile.tsx`
+*   `UserInput.tsx`
+*   `Message.tsx`
+*   `CitationFooter.tsx`
+
+### Monitoring Components (`src/components/monitoring/`)
+*   `ApiPerformance.tsx`
+*   `DeploymentList.tsx`
+*   `DeploymentLogs.tsx`
+*   `DeploymentStatus.tsx`
+
+### Providers (`src/components/providers/`)
+*   `ToastProvider.tsx`
+
+### UI (General Elements) (`src/components/ui/`)
+*   `notification.tsx`
+*   `tabs.tsx` *(Updated with working tab functionality)*
+*   `PreferenceSettings.tsx`
+*   `PerplexityStatus.tsx`
+*   `PerplexityLoader.tsx`
+*   `card.tsx`
+*   `alert.tsx`
+*   `badge.tsx`
+*   `collapsible.tsx`
+*   `button.tsx`
+*   `toast.tsx`
+*   `toaster.tsx`
+*   `alert-dialog.tsx`
+*   `avatar.tsx`
+*   `dropdown-menu.tsx`
+*   `input.tsx`
+*   `select.tsx`
+*   `skeleton.tsx`
+*   `spinner.tsx`
+*   `switch.tsx`
+*   `textarea.tsx`
+*   `AccountDetails.tsx`
+*   `ProfilePicture.tsx`
+*   `use-toast.ts` *(Note: This is a hook, not a visual component, but located in `ui`)*
+
+## Enhanced Components Details
+
+### ReadingListItem.tsx
+This component has been significantly enhanced with URL validation features:
+
+**Visual Indicators:**
+- **URL Status Icons**: 
+  - Green checkmark (✓) for verified working URLs
+  - Yellow warning triangle (⚠) for unverified/potentially broken URLs  
+  - Gray question mark (?) for URLs not yet validated
+- **Source Type Badges**: Color-coded badges for Academic, Book, Reddit Community, News, Media sources
+- **Warning Messages**: Clear text warnings for potentially broken links
+
+**Features:**
+- **Real-time URL Validation**: URLs are validated server-side using HEAD requests
+- **Reddit Community Integration**: Displays stable subreddit URLs instead of specific posts
+- **Accessibility**: All status indicators include tooltips and screen reader support
+- **Responsive Design**: Properly handles validation status across different screen sizes
+
+**Data Structure:**
+```typescript
+interface ReadingListItemProps {
+    reading: {
+        id: string;
+        title: string;
+        url: string;
+        snippet: string;
+        published_date?: string;
+        source?: string;
+        year?: string;
+        isPrimarySource?: boolean;
+        isValidUrl?: boolean; // NEW: URL validation status
+    };
+    expert: Expert;
+}
+```
+
+## Backend API Enhancements
+
+### Perplexity API Integration (`src/lib/api/perplexity.ts`)
+The Perplexity API integration has been enhanced with comprehensive URL validation:
+
+**New Functions:**
+- `validateUrl(url: string)`: Validates individual URLs using HEAD requests
+- `validateReadingUrls(readings: any[])`: Validates multiple URLs in parallel
+- Enhanced prompting for reliable URL generation
+
+**Features:**
+- **Concurrent URL Validation**: All URLs validated in parallel (10-second timeout per URL)
+- **Smart Filtering**: Removes obviously fake URLs (example.com, placeholders) before validation
+- **Redirect Handling**: Accepts 301/302 redirects as valid URLs
+- **Reddit Community Focus**: Requests stable subreddit URLs instead of post-specific links
+- **Graceful Degradation**: System continues working even if validation fails
+
+**Performance Optimizations:**
+- HEAD requests instead of GET to avoid downloading content
+- Parallel processing reduces total validation time to 10-15 seconds
+- Smart pre-filtering reduces unnecessary HTTP requests
+- Comprehensive error handling with detailed logging
+
+---
+
+## Potentially Unused Files
+
+This section lists files and directories that might be unused or deprecated. Further investigation (e.g., using "Find Usages" in an IDE or tools like `ts-prune`) is recommended to confirm their status before deletion.
+
+### Older or Experimental API Versions:
+*   `src/app/api/debate-old/`
+*   `src/app/api/debate-broken/`
+*   `src/app/api/debate-fixed/`
+*   `src/app/api/debate-2023/`
+
+### Test or Debugging Endpoints/Pages:
+*   `src/app/api/test/`
+*   `src/app/api/test-openai/`
+*   `src/app/api/auth/_log/`
+*   `src/app/api/auth/test-redirect/`
+*   `src/app/api/perplexity/debug/`
+*   `src/app/api-test/`
+*   `src/app/debug/`
+*   `src/app/perplexity-test/`
+*   `src/app/settings-test/`
+
+### Potentially Outdated Documentation or Notes:
+*   `docs/Potential-issues.md`
+*   `docs/Status.md`
+*   `project-status.md`
+*   `README-vercel-monitoring.md`
+*   `README-VERCEL.md`
+
+### Other Noted Files from Component Listing:
+*   `src/components/debate/DebatePanel.bak` (Backup file)
+*   `src/components/auth/.SessionProvider.tsx.swp` (Swap file)
+*   `src/components/auth/.SessionProvider.tsx.swo` (Swap file)
+
+## Recent Architectural Improvements
+
+### URL Validation System
+A comprehensive URL validation system has been implemented to ensure recommended reading links are reliable:
+
+- **Server-Side Validation**: URLs validated using Node.js fetch with HEAD requests
+- **Parallel Processing**: Multiple URLs validated concurrently for performance  
+- **Smart Filtering**: Pre-validation filtering removes obviously fake URLs
+- **Visual Feedback**: UI components show validation status with clear indicators
+- **Graceful Degradation**: System works even when validation fails
+
+### Reddit Community Integration
+Enhanced Reddit integration provides more stable and reliable community links:
+
+- **Subreddit Focus**: Provides stable `reddit.com/r/subredditname` URLs
+- **Post Avoidance**: Avoids specific post links that may be deleted or archived
+- **Community Emphasis**: Directs users to ongoing discussions rather than single posts
+- **Validation Friendly**: Subreddit URLs are more reliable for automated validation
+
+### Performance Enhancements
+Multiple performance improvements have been implemented:
+
+- **Concurrent Operations**: URL validation runs in parallel rather than sequentially
+- **Timeout Management**: Appropriate timeouts prevent hanging requests
+- **Error Handling**: Comprehensive error handling with detailed logging
+- **Caching Opportunities**: System designed to support future URL validation caching
+

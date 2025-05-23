@@ -62,3 +62,5 @@ service-account*.json
 *-credentials.json
 *-firebase-adminsdk-*.json
 crank-debate-e7ffe747c370.json
+
+.repomix-output.txt

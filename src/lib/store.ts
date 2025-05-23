@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Expert } from '@/types/expert';
 import { Message, Citation } from '@/types/message';
+import { DebateTopic, ProcessedContent } from '@/types/content';
 import { processCitationMarkers } from './utils/citation-processor';
 
 type ExpertType = 'historical' | 'ai';
@@ -14,8 +15,19 @@ function sanitizeNameForOpenAI(name: string | undefined): string | undefined {
     return name.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+// Extended topic interface for debate context
+interface DebateTopicContext {
+    title: string;
+    description?: string;
+    contentId?: string;
+    sourceType?: 'pdf' | 'youtube' | 'podcast';
+    extractedText?: string;
+    confidence?: number;
+}
+
 interface DebateState {
     topic: string;
+    topicContext: DebateTopicContext | null;
     userStance: string;
     experts: Expert[];
     messages: Message[];
@@ -25,7 +37,11 @@ interface DebateState {
     expertType: ExpertType;
     debateId: string | null;
     error: string | null;
-    setTopic: (topic: string) => void;
+    // Content processing related state
+    processedContent: ProcessedContent | null;
+    availableTopics: DebateTopic[];
+    setTopic: (topic: string | DebateTopicContext) => void;
+    setTopicContext: (context: DebateTopicContext) => void;
     setUserStance: (stance: string) => void;
     resetUserStance: () => void;
     setExperts: (experts: Expert[]) => void;
@@ -38,11 +54,16 @@ interface DebateState {
     setExpertType: (type: ExpertType) => void;
     initializeDebate: (debateId: string, topic: string) => void;
     setError: (error: string | null) => void;
+    // Content processing actions
+    setProcessedContent: (content: ProcessedContent | null) => void;
+    setAvailableTopics: (topics: DebateTopic[]) => void;
+    getContentContext: () => { contentId?: string; sourceType?: string; extractedText?: string };
     reset: () => void;
 }
 
 export const useDebateStore = create<DebateState>((set, get) => ({
     topic: '',
+    topicContext: null,
     userStance: '',
     experts: [],
     messages: [],
@@ -52,7 +73,22 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     expertType: 'historical',
     debateId: null,
     error: null,
-    setTopic: (topic) => set({ topic }),
+    processedContent: null,
+    availableTopics: [],
+    setTopic: (topic) => {
+        if (typeof topic === 'string') {
+            set({ topic, topicContext: { title: topic } });
+        } else {
+            set({
+                topic: topic.title,
+                topicContext: topic
+            });
+        }
+    },
+    setTopicContext: (context) => set({
+        topicContext: context,
+        topic: context.title
+    }),
     setUserStance: (stance) => set({ userStance: stance }),
     resetUserStance: () => set({ userStance: '' }),
     setExperts: (experts) => set({
@@ -142,13 +178,26 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     setExpertType: (type) => set({ expertType: type }),
     initializeDebate: (debateId, topic) => set({ debateId, topic }),
     setError: (error) => set({ error }),
+    setProcessedContent: (content) => set({ processedContent: content }),
+    setAvailableTopics: (topics) => set({ availableTopics: topics }),
+    getContentContext: () => {
+        const state = get();
+        return {
+            contentId: state.topicContext?.contentId,
+            sourceType: state.topicContext?.sourceType,
+            extractedText: state.topicContext?.extractedText || state.processedContent?.extractedText
+        };
+    },
     reset: () => set({
         topic: '',
+        topicContext: null,
         userStance: '',
         experts: [],
         messages: [],
         expertType: 'historical',
         debateId: null,
-        error: null
+        error: null,
+        processedContent: null,
+        availableTopics: []
     }),
 })); 

@@ -1,0 +1,73 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Firebase Integration
+
+This rule outlines the Firebase integration in the Debate-able application, focusing on Firestore as the primary database for storing user profiles, debate data, and application state.
+
+## Key Components
+
+### Server-Side Integration
+- **Firebase Admin SDK** (`src/lib/db/firebase-admin.ts`)
+  - Used in Next.js API Routes
+  - Initialized once per server instance
+  - Fallback to mock implementation for development/testing
+
+### Client-Side Integration
+- **Firebase JS SDK** (`src/lib/db/firebase-client.ts`)
+  - Used directly in React components
+  - Provides real-time data synchronization
+  - Authentication via `getAuth()`
+
+## Database Structure
+
+### Collections
+- **users**: User profiles and preferences
+- **debates**: Debate content, messages, and metadata
+- **favorites**: User's favorite debates
+
+### Type Definitions
+- Collections are strongly typed using TypeScript generics
+- Helper functions ensure type safety for database operations
+
+## Database Access Patterns
+
+### Server-Side Patterns
+- API routes use Admin SDK for authenticated operations
+- Server has full access to all collections
+- Used for operations requiring admin privileges or backend processing
+
+### Client-Side Patterns
+- Components use Firebase JS SDK directly for real-time updates
+- Client access is restricted by Firebase Security Rules
+- Used for immediate UI updates and real-time features
+
+## Performance Considerations
+
+1. **Connection Management**:
+   - Admin SDK initialized only once at server startup
+   - Client SDK initialized once on the client
+
+2. **Query Optimization**:
+   - Use compound queries with appropriate indexes
+   - Limit result sets where possible
+   - Use pagination for large collections
+
+3. **Data Access Patterns**:
+   - Get debates by user ID: Filter by `userId` field
+   - Get user profile: Direct document access by ID
+   - Messages are nested within debate documents
+
+4. **Common Performance Issues**:
+   - Over-fetching entire collections instead of specific documents
+   - Missing indexes for complex queries
+   - Unnecessary real-time listeners causing excessive renders
+
+## Error Handling
+
+- Firebase operations are wrapped in try/catch blocks
+- Failed database operations fall back to mock implementations in development
+- Errors are logged to console with contextual information
+

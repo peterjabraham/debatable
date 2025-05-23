@@ -30,8 +30,8 @@ export async function POST(request: Request) {
             formattedMessages.unshift({
                 role: 'system',
                 content: `The debate topic is: ${topic}. Consider this key point: ${typeof expertArgument === 'string'
-                        ? expertArgument
-                        : (expertArgument.claim || expertArgument.text || JSON.stringify(expertArgument))
+                    ? expertArgument
+                    : (expertArgument.claim || expertArgument.text || JSON.stringify(expertArgument))
                     }`
             });
         }

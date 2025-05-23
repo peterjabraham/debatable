@@ -1,6 +1,5 @@
 interface ApiConfig {
     useRealApi: boolean;
-    apiServerAvailable: boolean;
     baseUrl: string;
     debug: boolean;
 }
@@ -15,7 +14,6 @@ interface OpenAIConfig {
 export function getApiConfig(): ApiConfig {
     return {
         useRealApi: process.env.NEXT_PUBLIC_USE_REAL_API === 'true',
-        apiServerAvailable: process.env.API_SERVER_AVAILABLE === 'true',
         baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000',
         debug: process.env.NODE_ENV === 'development'
     };

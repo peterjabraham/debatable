@@ -5,7 +5,9 @@ import {
     Topic,
     Argument
 } from '@/types/content-processing';
+import { DebateTopic } from '@/types/content';
 import { compareTwoStrings } from 'string-similarity';
+import openai from '@/lib/ai/openai-client';
 
 const DEFAULT_OPTIONS: TopicExtractorOptions = {
     minConfidence: 0.6,
@@ -15,120 +17,306 @@ const DEFAULT_OPTIONS: TopicExtractorOptions = {
 };
 
 /**
- * Extract debate topics from text content
- * @param text The text content to extract topics from
- * @returns An array of extracted topics with arguments
+ * Enhanced topic extraction with OpenAI and content-type specific prompts
  */
-export async function extractTopicsFromText(text: string) {
+export async function extractTopicsFromText(
+    text: string,
+    sourceType: 'pdf' | 'youtube' | 'podcast' | 'general' = 'general'
+): Promise<DebateTopic[]> {
     try {
-        console.log('Extracting topics from text');
+        console.log(`[Topic Extractor] Extracting topics from ${sourceType} content`);
 
         // Check for empty text
         if (!text || text.trim() === '') {
-            console.warn('Empty text provided to topic extractor');
+            console.warn('[Topic Extractor] Empty text provided');
             return [];
         }
 
-        // Create a topic extractor instance
-        const extractor = new TopicExtractor();
+        // Use OpenAI for better topic extraction
+        const topics = await generateTopicsWithOpenAI(text, sourceType);
 
-        // Parse the document
-        const parsedDocument: ParsedDocument = {
-            content: text,
-            sections: [{
-                title: 'Main Content',
-                content: text
-            }]
-        };
+        if (topics && topics.length > 0) {
+            console.log(`[Topic Extractor] Successfully extracted ${topics.length} topics using OpenAI`);
+            return topics;
+        }
 
-        // Extract topics
-        console.log('Running topic extraction');
+        // Fallback to original method if OpenAI fails
+        console.log('[Topic Extractor] OpenAI extraction failed, falling back to local extraction');
+        return await extractTopicsLocalFallback(text);
 
-        let extractionResult;
+    } catch (error) {
+        console.error('[Topic Extractor] Error extracting topics:', error);
+
+        // Try fallback method
         try {
-            extractionResult = await extractor.extractTopics(parsedDocument);
-        } catch (error) {
-            console.error('Error during topic extraction:', error);
+            return await extractTopicsLocalFallback(text);
+        } catch (fallbackError) {
+            console.error('[Topic Extractor] Fallback extraction also failed:', fallbackError);
+            throw new Error(`Failed to extract topics: ${error.message}`);
+        }
+    }
+}
 
-            // Use a fallback extraction method or return empty results
-            extractionResult = {
-                topics: [],
-                args: []
-            };
+/**
+ * Generate topics using OpenAI with content-type specific prompts
+ */
+async function generateTopicsWithOpenAI(
+    text: string,
+    sourceType: 'pdf' | 'youtube' | 'podcast' | 'general'
+): Promise<DebateTopic[]> {
 
-            // Try to extract some basic topics using a simplified approach
+    const contentTypePrompts = {
+        pdf: `
+Analyze this academic/professional document and identify the most debatable topics it covers.
+Focus on:
+- Key research questions or hypotheses
+- Policy recommendations or implications
+- Controversial findings or interpretations
+- Competing theories or approaches discussed
+- Ethical or societal implications
+`,
+        youtube: `
+Analyze this YouTube video transcript and identify the most debatable topics discussed.
+Focus on:
+- Main arguments or claims made by the speaker(s)
+- Controversial opinions or hot takes
+- Different perspectives presented
+- Topics that sparked discussion in comments (implied)
+- Practical vs theoretical approaches discussed
+`,
+        podcast: `
+Analyze this podcast transcript and identify the most debatable topics discussed.
+Focus on:
+- Key points of disagreement between hosts/guests
+- Controversial topics or opinions shared
+- Industry debates or trending discussions
+- Personal experiences that raise broader questions
+- Topics that invite listener engagement
+`,
+        general: `
+Analyze this text and identify the most debatable topics it covers.
+Focus on topics that have multiple valid perspectives and would generate meaningful discussion.
+`
+    };
+
+    const prompt = `${contentTypePrompts[sourceType]}
+
+Please identify 3-5 specific, debatable topics from the following content. For each topic:
+
+1. Create a clear, engaging title (10-60 characters)
+2. Write a neutral summary that explains what the debate would be about (50-150 words)
+3. Ensure the topic has multiple valid perspectives that could lead to substantive discussion
+
+Format your response as a JSON array of objects with this structure:
+[
+  {
+    "title": "Clear, Engaging Topic Title",
+    "summary": "Neutral explanation of what this debate topic covers and why it's worth discussing.",
+    "confidence": 0.8
+  }
+]
+
+Content to analyze:
+---
+${text.substring(0, 12000)}
+---
+
+Return ONLY the JSON array, no additional text.`;
+
+    try {
+        const response = await openai.chat.completions.create({
+            model: 'gpt-3.5-turbo',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.7,
+            max_tokens: 1500
+        });
+
+        const content = response.choices[0]?.message?.content;
+        if (!content) {
+            throw new Error('No content returned from OpenAI');
+        }
+
+        // Parse the JSON response
+        const topics = JSON.parse(content);
+
+        // Validate the structure
+        if (!Array.isArray(topics)) {
+            throw new Error('Response is not an array');
+        }
+
+        return topics.map((topic: any) => ({
+            title: topic.title || 'Untitled Topic',
+            summary: topic.summary || 'No summary available',
+            confidence: topic.confidence || 0.7
+        }));
+
+    } catch (error: any) {
+        console.error('[Topic Extractor] OpenAI API error:', error);
+
+        // Try to parse partial response if it's a JSON parsing error
+        if (error.message.includes('JSON')) {
             try {
-                console.log('Using fallback topic extraction method');
-
-                // Split content into paragraphs
-                const paragraphs = text.split(/\n\s*\n/);
-
-                // Look for capitalized phrases that might be topics
-                const potentialTopics = new Set<string>();
-                const regex = /\b[A-Z][a-z]+(?:\s+[A-Z]?[a-z]+){1,3}\b/g;
-
-                paragraphs.forEach(paragraph => {
-                    const matches = paragraph.match(regex);
-                    if (matches) {
-                        matches.forEach(match => potentialTopics.add(match));
+                const content = error.response?.data?.choices?.[0]?.message?.content;
+                if (content) {
+                    // Try to extract JSON from the content
+                    const jsonMatch = content.match(/\[[\s\S]*\]/);
+                    if (jsonMatch) {
+                        const topics = JSON.parse(jsonMatch[0]);
+                        return topics.map((topic: any) => ({
+                            title: topic.title || 'Untitled Topic',
+                            summary: topic.summary || 'No summary available',
+                            confidence: topic.confidence || 0.7
+                        }));
                     }
-                });
-
-                // Convert to topics array
-                if (potentialTopics.size > 0) {
-                    extractionResult.topics = Array.from(potentialTopics).slice(0, 3).map(title => ({
-                        title,
-                        confidence: 0.7,
-                        relatedTopics: []
-                    }));
-
-                    // Add a basic argument for each topic
-                    extractionResult.args = extractionResult.topics.map(topic => ({
-                        topicTitle: topic.title,
-                        text: `Analysis of ${topic.title}`,
-                        type: 'support',
-                        confidence: 0.7
-                    }));
                 }
-            } catch (fallbackError) {
-                console.error('Fallback extraction also failed:', fallbackError);
-                // Keep empty results
+            } catch (parseError) {
+                console.error('[Topic Extractor] Could not parse partial response');
             }
         }
 
-        // Process the result - transform to the format expected by the UI
-        const displayTopics = extractionResult.topics.map(topic => {
-            const topicArguments = extractionResult.args
-                .filter(arg => arg.topicTitle === topic.title)
-                .map(arg => ({
-                    claim: arg.text || `Argument about ${topic.title}`,
-                    evidence: `Analysis of the document reveals that ${arg.text || 'this topic'} is significant.`,
-                    type: arg.type
-                }));
-
-            // Ensure we always have at least one argument
-            const topicArgs = topicArguments.length > 0 ? topicArguments : [
-                {
-                    claim: `Key aspect of ${topic.title}`,
-                    evidence: `The document discusses important aspects of ${topic.title}.`
-                }
-            ];
-
-            // Return in the format expected by the UI
-            return {
-                title: topic.title,
-                confidence: topic.confidence,
-                arguments: topicArgs
-            };
-        });
-
-        console.log(`Extracted ${displayTopics.length} topics for display`);
-        console.log('Topics for display:', JSON.stringify(displayTopics, null, 2));
-        return displayTopics;
-    } catch (error) {
-        console.error('Error extracting topics:', error);
-        throw new Error(`Failed to extract topics: ${error.message}`);
+        throw error;
     }
+}
+
+/**
+ * Enhanced fallback topic extraction
+ */
+async function extractTopicsLocalFallback(text: string): Promise<DebateTopic[]> {
+    console.log('[Topic Extractor] Using enhanced local fallback method');
+
+    // Create a topic extractor instance
+    const extractor = new TopicExtractor();
+
+    // Parse the document
+    const parsedDocument: ParsedDocument = {
+        content: text,
+        sections: [{
+            title: 'Main Content',
+            content: text
+        }]
+    };
+
+    // Extract topics using the enhanced local method
+    const extractionResult = await extractor.extractTopics(parsedDocument);
+
+    // Convert to DebateTopic format
+    const debateTopics: DebateTopic[] = extractionResult.topics.map(topic => {
+        const topicArguments = extractionResult.args
+            .filter(arg => arg.topicTitle === topic.title)
+            .slice(0, 2); // Limit to 2 main arguments
+
+        let summary = '';
+        if (topicArguments.length > 0) {
+            summary = `This topic explores ${topicArguments[0].text}`;
+            if (topicArguments.length > 1) {
+                summary += ` It also considers ${topicArguments[1].text}`;
+            }
+        } else {
+            summary = `Analysis of ${topic.title} and its implications.`;
+        }
+
+        return {
+            title: topic.title,
+            summary: summary.substring(0, 200), // Limit summary length
+            confidence: topic.confidence
+        };
+    });
+
+    return debateTopics;
+}
+
+/**
+ * Generate topics for a specific content type with better prompting
+ */
+export async function generateTopicsForContentType(
+    text: string,
+    sourceType: 'pdf' | 'youtube' | 'podcast',
+    maxTopics: number = 5
+): Promise<DebateTopic[]> {
+    return extractTopicsFromText(text, sourceType);
+}
+
+/**
+ * Validate topic structure and ensure quality
+ */
+export function validateTopicStructure(topics: DebateTopic[]): DebateTopic[] {
+    return topics.filter(topic => {
+        // Ensure topic has required fields
+        if (!topic.title || !topic.summary) return false;
+
+        // Ensure title is reasonable length
+        if (topic.title.length < 5 || topic.title.length > 100) return false;
+
+        // Ensure summary is reasonable length
+        if (topic.summary.length < 20 || topic.summary.length > 300) return false;
+
+        // Ensure confidence is within valid range
+        if (topic.confidence && (topic.confidence < 0 || topic.confidence > 1)) return false;
+
+        return true;
+    });
+}
+
+/**
+ * Generate fallback topics when extraction fails completely
+ */
+export function generateFallbackTopics(
+    sourceName: string,
+    sourceType: 'pdf' | 'youtube' | 'podcast' | 'general' = 'general'
+): DebateTopic[] {
+    const baseTitle = sourceName
+        .split(/[_\-\s\.]+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ')
+        .replace(/\.(pdf|docx|txt)$/i, '');
+
+    const contentTypeTemplates = {
+        pdf: [
+            {
+                title: `${baseTitle}: Research Implications`,
+                summary: `Examining the research findings and methodological approaches presented in this document, and their broader implications for the field.`,
+                confidence: 0.6
+            },
+            {
+                title: `${baseTitle}: Policy and Practice`,
+                summary: `Discussing how the insights from this document should influence policy decisions and practical applications.`,
+                confidence: 0.5
+            }
+        ],
+        youtube: [
+            {
+                title: `${baseTitle}: Content Analysis`,
+                summary: `Analyzing the main arguments and perspectives presented in this video and their validity in current discourse.`,
+                confidence: 0.6
+            },
+            {
+                title: `${baseTitle}: Impact and Reception`,
+                summary: `Evaluating the potential impact of this content and how different audiences might interpret its message.`,
+                confidence: 0.5
+            }
+        ],
+        podcast: [
+            {
+                title: `${baseTitle}: Discussion Points`,
+                summary: `Examining the key topics and debates raised in this podcast episode and their broader significance.`,
+                confidence: 0.6
+            },
+            {
+                title: `${baseTitle}: Expert Perspectives`,
+                summary: `Analyzing the expert opinions and insights shared in this episode and their implications for the field.`,
+                confidence: 0.5
+            }
+        ],
+        general: [
+            {
+                title: `${baseTitle}: Key Issues`,
+                summary: `Exploring the main themes and controversial aspects presented in this content.`,
+                confidence: 0.5
+            }
+        ]
+    };
+
+    return contentTypeTemplates[sourceType] || contentTypeTemplates.general;
 }
 
 export class TopicExtractor {

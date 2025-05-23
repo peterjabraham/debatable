@@ -10,7 +10,6 @@ import { getMultiExpertRecommendedReading } from '@/lib/api/perplexity';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown } from 'lucide-react';
-import { EnvDebug } from '@/components/debug';
 import { PerplexityService, type ReadingError } from '@/lib/services/PerplexityService';
 import { ReadingListItem } from './ReadingListItem';
 
@@ -117,20 +116,29 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
 
                 // Use the PerplexityService singleton
                 const perplexityService = PerplexityService.getInstance();
-                const { results, errors } = await perplexityService.getMultiExpertReadings(experts, debouncedTopic);
 
-                // Set the readings in state
-                setRecommendedReadings(results);
+                try {
+                    const { results, errors } = await perplexityService.getMultiExpertReadings(experts, debouncedTopic);
 
-                // Handle any errors
-                if (errors.length > 0) {
-                    setReadingErrors(errors);
+                    // Set the readings in state
+                    setRecommendedReadings(results);
+
+                    // Handle any errors
+                    if (errors.length > 0) {
+                        setReadingErrors(errors);
+                    }
+                } catch (perplexityError) {
+                    console.error('Perplexity service error:', perplexityError);
+                    setReadingErrors([{
+                        expert: 'all',
+                        error: 'Reading recommendations are temporarily unavailable.'
+                    }]);
                 }
             } catch (error) {
                 console.error('Error fetching recommended readings:', error);
                 setReadingErrors([{
                     expert: 'all',
-                    error: error instanceof Error ? error.message : 'Failed to fetch recommended readings'
+                    error: 'Unable to load reading recommendations. Please try again later.'
                 }]);
             } finally {
                 setIsLoadingReadings(false);
@@ -222,58 +230,47 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
                     <BookOpen className="h-4 w-4" />
                     Recommended Reading
                 </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                    Diverse resources to explore this topic from different perspectives and sources
+                </p>
 
                 {isLoadingReadings ? (
                     <div className="p-4 text-center">
                         <div className="animate-pulse flex flex-col items-center">
                             <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
                             <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                            <p className="mt-4 text-sm text-muted-foreground">Fetching reading recommendations from Perplexity API...</p>
+                            <p className="mt-1 text-xs text-muted-foreground">This may take a moment to complete</p>
                         </div>
                     </div>
                 ) : readingErrors.length > 0 && readingErrors[0].expert === 'all' ? (
-                    <div className="p-4 text-center text-red-500">
-                        {readingErrors[0].error}
+                    <div className="p-4 text-center">
+                        <p className="text-amber-500 mb-2">{readingErrors[0].error}</p>
+                        <p className="text-sm text-muted-foreground">You can still explore this topic further through academic journals and online resources.</p>
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {experts.map((expert) => (
-                            <Collapsible key={expert.name} className="border rounded-lg">
-                                <CollapsibleTrigger className="w-full p-4 flex items-center justify-between">
-                                    <div>
-                                        <h4 className="font-medium">{expert.name}</h4>
-                                        <p className="text-sm text-muted-foreground">
-                                            {expert.expertise ? (Array.isArray(expert.expertise) ? expert.expertise.join(', ') : expert.expertise) : 'Expert'}
-                                        </p>
-                                    </div>
-                                    <ChevronDown className="h-4 w-4" />
-                                </CollapsibleTrigger>
-
-                                <CollapsibleContent>
-                                    <div className="p-4 pt-0">
-                                        {recommendedReadings[expert.name]?.length > 0 ? (
-                                            <div className="space-y-4">
-                                                {recommendedReadings[expert.name].map((reading) => (
-                                                    <ReadingListItem
-                                                        key={reading.id}
-                                                        reading={reading}
-                                                        expert={expert}
-                                                    />
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center text-muted-foreground py-4">
-                                                {readingErrors.find(e => e.expert === expert.name)?.error ||
-                                                    'No recommended readings found for this expert.'}
-                                            </div>
-                                        )}
-                                    </div>
-                                </CollapsibleContent>
-                            </Collapsible>
-                        ))}
+                        {/* Check if we have any readings at all */}
+                        {Object.values(recommendedReadings).some(readings => readings && readings.length > 0) ? (
+                            // Display the readings once (not per expert) since they're now topic-based
+                            <div className="space-y-4">
+                                {/* Find the first expert with readings and use those */}
+                                {Object.entries(recommendedReadings).find(([_, readings]) => readings && readings.length > 0)?.[1].map((reading) => (
+                                    <ReadingListItem
+                                        key={reading.id}
+                                        reading={reading}
+                                        expert={experts[0]} // Just use the first expert for styling
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center text-muted-foreground py-4">
+                                No reading recommendations available for this topic yet.
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
-            <EnvDebug />
         </div>
     );
 } 

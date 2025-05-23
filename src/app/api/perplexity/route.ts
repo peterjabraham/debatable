@@ -26,14 +26,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error }, { status: 400 });
         }
 
-        // For development/testing, allow direct response with mock data
-        if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK_DATA === 'true') {
-            console.log('Using mock data for development');
-            return NextResponse.json(
-                generateMockResults(experts, topic)
-            );
-        }
-
         // Process each expert in parallel
         const results: Record<string, any[]> = {};
         const errors: Record<string, string> = {};
@@ -83,36 +75,4 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
-}
-
-/**
- * Generates mock results for development/testing
- */
-function generateMockResults(experts: any[], topic: string) {
-    const mockResults: Record<string, any[]> = {};
-
-    experts.forEach(expert => {
-        mockResults[expert.name] = [
-            {
-                id: `mock-${Date.now()}-1`,
-                url: 'https://example.com/paper1',
-                title: `${expert.name}'s Research on ${topic}`,
-                snippet: `This is a mock research paper about ${expert.name}'s area of expertise related to ${topic}. It contains valuable insights and data.`
-            },
-            {
-                id: `mock-${Date.now()}-2`,
-                url: 'https://example.com/paper2',
-                title: `Recent Developments in ${topic}`,
-                snippet: 'This paper explores recent developments and breakthroughs in the field with practical applications.'
-            },
-            {
-                id: `mock-${Date.now()}-3`,
-                url: 'https://example.com/paper3',
-                title: 'Comprehensive Literature Review',
-                snippet: 'A thorough review of existing literature that synthesizes current knowledge and identifies gaps.'
-            }
-        ];
-    });
-
-    return mockResults;
 } 

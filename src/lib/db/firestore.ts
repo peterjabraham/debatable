@@ -9,7 +9,9 @@ export const COLLECTIONS = {
     USERS: process.env.FIRESTORE_USERS_COLLECTION || 'users',
     DEBATES: process.env.FIRESTORE_DEBATES_COLLECTION || 'debates',
     MESSAGES: process.env.FIRESTORE_MESSAGES_COLLECTION || 'messages',
-    PROCESSED_MEDIA: process.env.FIRESTORE_PROCESSED_MEDIA_COLLECTION || 'processed_media'
+    PROCESSED_MEDIA: process.env.FIRESTORE_PROCESSED_MEDIA_COLLECTION || 'processed_media',
+    USER_CONTENT: process.env.FIRESTORE_USER_CONTENT_COLLECTION || 'userContent',
+    CONTENT_JOBS: process.env.FIRESTORE_CONTENT_JOBS_COLLECTION || 'contentJobs'
 };
 
 // Track if Firestore has been initialized
@@ -347,4 +349,12 @@ export async function queryDocuments(collectionPath: string, filters: Array<{ fi
         console.error(`Error querying documents in ${collectionPath}:`, errorMessage);
         throw error;
     }
-} 
+}
+
+// Collection constants
+export const USER_CONTENT = 'userContent';
+export const CONTENT_JOBS = 'contentJobs';
+export const DEBATES = 'debates';
+export const MESSAGES = 'messages';
+
+const admin = require('firebase-admin'); 

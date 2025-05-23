@@ -52,7 +52,6 @@ export async function generateResponse(
         console.log(`Using REAL OpenAI API with key format: ${process.env.OPENAI_API_KEY?.substring(0, 7)}...`);
         console.log(`OpenAI model in use: ${getModel()}`);
         console.log(`Environment: ${process.env.NODE_ENV}`);
-        console.log(`USE_MOCK_DATA: ${process.env.USE_MOCK_DATA}`);
         console.log(`NEXT_PUBLIC_USE_REAL_API: ${process.env.NEXT_PUBLIC_USE_REAL_API}`);
 
         const lastUserMessage = messages

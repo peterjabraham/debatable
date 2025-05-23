@@ -66,12 +66,8 @@ export const testCredentials = {
     enabled: process.env.NODE_ENV === 'development',
     // Only use mock responses if not forced to use real API
     mockResponses: process.env.NODE_ENV !== 'production' &&
-        process.env.NEXT_PUBLIC_USE_REAL_API !== 'true' &&
-        process.env.USE_MOCK_RESPONSES === 'true',
+        process.env.NEXT_PUBLIC_USE_REAL_API !== 'true',
 };
-
-// Debug mode for verbose logging
-export const debugMode = process.env.DEBUG_LANGCHAIN === 'true';
 
 // Export configuration
 export const langchainConfig = {
@@ -86,7 +82,6 @@ export const langchainConfig = {
     },
     agent: agentConfig,
     test: testCredentials,
-    debug: debugMode,
 };
 
 export default langchainConfig; 

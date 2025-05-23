@@ -1,0 +1,352 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Content Processing Implementation Plan
+
+## Overview
+This plan implements Option 1 (Synchronous Server-Side Processing) for PDF upload, YouTube URL, and Podcast URL content processing, designed to evolve to Option 2 (Asynchronous Processing) later.
+
+## Implementation Strategy
+- **Phase 1**: Synchronous processing with proper status tracking
+- **Phase 2**: Evolution to asynchronous processing (future)
+- **Integration**: Seamless integration with existing Supporter/Opposer/User chat interface
+- **Context Maintenance**: Ensure debate context is preserved throughout the chat
+
+## ✅ COMPLETED WORK (Recent Achievements)
+
+### URL Validation & Reading Recommendations System ✅
+**Status**: **COMPLETED** - Comprehensive URL validation system implemented
+- ✅ **Perplexity API Integration Enhanced**: Added URL validation to reading recommendations
+- ✅ **URL Validation Engine**: Concurrent HEAD requests with 10-second timeouts
+- ✅ **Reddit Community Integration**: Stable subreddit URLs instead of specific posts
+- ✅ **Visual Indicators**: ReadingListItem component shows validation status
+- ✅ **Smart Filtering**: Removes fake URLs (example.com, placeholders) before validation
+- ✅ **Graceful Degradation**: System works even when validation fails
+- ✅ **Performance Optimization**: Parallel processing reduces validation time to 10-15 seconds
+
+### UI Improvements ✅
+**Status**: **COMPLETED** - Critical UI fixes implemented
+- ✅ **Tab Functionality Fixed**: Content processing tabs now work properly
+- ✅ **Navigation Fixes**: "New Debate" button properly resets state
+- ✅ **Historical Figure Selection**: Enhanced with 6-figure selection, metadata, and validation
+- ✅ **Loading States**: Improved loading indicators and user feedback
+- ✅ **Error Handling**: Better error messages and timeout management
+
+### Documentation Updates ✅
+**Status**: **COMPLETED** - All documentation updated
+- ✅ **Architecture Documentation**: Updated with URL validation system
+- ✅ **Debugging Guide**: Added URL validation debugging patterns
+- ✅ **Tech Stack**: Documented node-fetch and new dependencies
+- ✅ **Project Overview**: Enhanced component documentation
+- ✅ **Performance Guides**: Added URL validation performance considerations
+
+## 🚧 IN PROGRESS ITEMS
+
+### Basic Content Processing Infrastructure
+**Status**: **PARTIALLY COMPLETED** - Basic structure exists, needs enhancement
+- ✅ **API Routes**: Basic content processing routes exist
+- ✅ **PDF Processing**: Basic PDF upload functionality working
+- ⚠️ **YouTube Processing**: Basic structure exists, needs URL validation integration
+- ⚠️ **Podcast Processing**: Basic structure exists, needs enhancement
+- ❌ **Unified API Endpoint**: Needs consolidation into single endpoint
+
+## 📋 REMAINING WORK (Prioritized)
+
+### Step 1: Install Required Dependencies
+**Files Affected**: `package.json`
+**Status**: ❌ **PENDING**
+
+**Description**: Add necessary dependencies for enhanced content processing
+- `youtube-transcript@^1.2.1` - For YouTube transcript fetching
+- `rss-parser@^3.13.0` - For podcast RSS parsing
+
+**Command**: `npm install youtube-transcript@^1.2.1 rss-parser@^3.13.0`
+
+**Priority**: HIGH - Required for enhanced content processing
+
+### Step 2: Create Centralized Content Processing API Route
+**Files Affected**: 
+- `src/app/api/content/process-source/route.ts` (enhance existing)
+
+**Status**: ⚠️ **NEEDS ENHANCEMENT**
+
+**Description**: Enhance existing content processing to unified endpoint with URL validation integration
+
+**Functions/Components**:
+- `POST()`: Enhance main processing handler
+- `OPTIONS()`: Add CORS preflight handler  
+- `downloadAudioToTempFile()`: Add helper for podcast audio download
+- `validateInput()`: Enhance input validation
+- `updateProcessingStatus()`: Add status tracking helper
+- **NEW**: `validateExtractedUrls()`: Integrate URL validation for content-extracted links
+
+**Features to Add**:
+- Status tracking (pending → extracting_text → generating_topics → completed)
+- Enhanced error handling with detailed logging
+- **Integration with URL validation system for content-extracted links**
+- OpenAI integration improvements
+
+### Step 3: Enhance Firebase Schema for Content Storage
+**Files Affected**:
+- `src/lib/db/firestore.ts` (update COLLECTIONS)
+- `src/types/content.ts` (new)
+
+**Status**: ❌ **PENDING**
+
+**Description**: Extend Firebase schema to store processed content and generated topics.
+
+**New Collections**:
+- `userContent`: Stores processed content metadata and topics
+- `contentJobs`: For future async processing (status tracking)
+
+**Schema Structure**:
+```typescript
+interface ProcessedContent {
+  id: string;
+  userId: string;
+  sourceType: 'pdf' | 'youtube' | 'podcast';
+  sourceName: string;
+  sourceUrl?: string;
+  status: 'pending' | 'extracting_text' | 'generating_topics' | 'completed' | 'failed';
+  extractedText?: string;
+  textStoragePath?: string; // For large texts stored in Firebase Storage
+  debateTopics: DebateTopic[];
+  extractedUrls?: ExtractedUrl[]; // NEW: URLs found in content with validation status
+  createdAt: string;
+  updatedAt: string;
+  errorMessage?: string;
+}
+
+interface ExtractedUrl {
+  url: string;
+  title?: string;
+  isValidated: boolean;
+  isAccessible?: boolean;
+  validationDate?: string;
+}
+```
+
+### Step 4: Update ContentUploader Component  
+**Files Affected**:
+- `src/components/content-processing/ContentUploader.tsx` (major update)
+
+**Status**: ⚠️ **NEEDS ENHANCEMENT** (Basic functionality exists)
+
+**Description**: Enhance existing component to use unified API and handle all content types with URL validation.
+
+**Changes Needed**:
+- ✅ UI includes all content types (PDF, YouTube, Podcast)
+- ✅ Basic error handling exists
+- ❌ **NEEDS**: Integration with unified `/api/content/process-source` endpoint
+- ❌ **NEEDS**: Status polling capability (for future async support)
+- ❌ **NEEDS**: URL validation integration for extracted links
+- ❌ **NEEDS**: Enhanced loading states for different processing stages
+
+**New Functions to Add**:
+- `handleContentProcessing()`: Unified content processing handler
+- `pollProcessingStatus()`: For future async support
+- `validateExtractedUrls()`: Validate URLs found in processed content
+
+### Step 5: Create Content Processing Library Functions
+**Files Affected**:
+- `src/lib/content-processing/podcast-processor.ts` (new)
+- `src/lib/content-processing/youtube-processor.ts` (new)
+- `src/lib/content-processing/index.ts` (update exports)
+
+**Status**: ❌ **PENDING**
+
+**Description**: Create modular content processing functions for different content types.
+
+**podcast-processor.ts Functions**:
+- `extractPodcastText()`: Download and transcribe podcast audio
+- `parsePodcastRss()`: Parse RSS feed to get audio URL
+- `downloadPodcastAudio()`: Download audio file
+- **NEW**: `validatePodcastUrls()`: Validate URLs found in podcast metadata
+
+**youtube-processor.ts Functions**:
+- `extractYouTubeText()`: Fetch transcript from YouTube
+- `validateYouTubeUrl()`: URL validation using existing validation system
+- `getVideoMetadata()`: Extract video metadata
+- **NEW**: `validateVideoUrls()`: Validate URLs found in video descriptions
+
+### Step 6: Enhanced Topic Generation
+**Files Affected**:
+- `src/lib/content-processing/topic-extractor.ts` (update)
+
+**Status**: ⚠️ **NEEDS ENHANCEMENT** (Basic functionality exists)
+
+**Description**: Improve topic generation with better prompting and error handling.
+
+**Enhancements Needed**:
+- More sophisticated prompts for different content types
+- Fallback topic generation strategies
+- Confidence scoring for topics
+- Context-aware topic extraction
+- **NEW**: Integration with URL validation for topic-related links
+
+**New Functions to Add**:
+- `generateTopicsForContentType()`: Content-type specific topic generation
+- `validateTopicStructure()`: Ensure proper topic format
+- `generateFallbackTopics()`: Fallback when AI fails
+- **NEW**: `validateTopicUrls()`: Validate URLs mentioned in generated topics
+
+### Step 7: Integrate with Debate System ✅/⚠️
+**Files Affected**:
+- `src/lib/store.ts` (update Zustand store)
+- `src/components/debate/DebatePanel.tsx` (update)
+
+**Status**: ⚠️ **PARTIALLY COMPLETED** (Basic integration exists, needs enhancement)
+
+**Description**: Enhance integration of processed content with the existing debate system.
+
+**Store Updates Needed**:
+- ❌ Add `processedContent` state
+- ❌ Add `selectedContentId` for linking debates to source content
+- ❌ Add actions for content selection and management
+
+**DebatePanel Updates Needed**:
+- ✅ Enhanced expert selection exists
+- ✅ Enhanced loading states exist
+- ❌ **NEEDS**: Content selection UI
+- ❌ **NEEDS**: Pass source content context to AI agents
+- ❌ **NEEDS**: Maintain content reference throughout debate
+
+### Step 8: Update AI Agent Context
+**Files Affected**:
+- `src/lib/ai/expert-selector.ts` (update)
+- `src/lib/ai/response-generator.ts` (update)
+
+**Status**: ⚠️ **PARTIALLY COMPLETED** (Enhanced prompting exists, needs content integration)
+
+**Description**: Enhance AI agents to use source content context in debates.
+
+**Changes Needed**:
+- ✅ Enhanced expert selection prompting exists
+- ✅ URL validation for recommended readings implemented
+- ❌ **NEEDS**: Include source content summary in expert selection
+- ❌ **NEEDS**: Reference original content in debate responses
+- ❌ **NEEDS**: Maintain context consistency throughout debate
+
+### Step 9: Add Content Management UI
+**Files Affected**:
+- `src/components/content-processing/ContentLibrary.tsx` (new)
+- `src/app/content/page.tsx` (new)
+
+**Status**: ❌ **PENDING**
+
+**Description**: Create UI for users to manage their processed content.
+
+**Features to Implement**:
+- List all processed content
+- View processing status
+- Select content for debates
+- Delete content
+- Re-process failed content
+- **NEW**: View URL validation status for content-extracted links
+
+### Step 10: Error Handling and Monitoring
+**Files Affected**:
+- `src/lib/errors/content-processing-errors.ts` (new)
+- `src/lib/monitoring/content-metrics.ts` (new)
+
+**Status**: ⚠️ **PARTIALLY COMPLETED** (Basic error handling exists)
+
+**Description**: Implement comprehensive error handling and monitoring.
+
+**Error Handling - Partially Done**:
+- ✅ Basic error handling in place
+- ✅ User-friendly error messages for URL validation
+- ❌ **NEEDS**: Custom error classes for different failure types
+- ❌ **NEEDS**: Graceful degradation strategies for content processing
+- ❌ **NEEDS**: Retry mechanisms
+
+**Monitoring - Needs Implementation**:
+- ❌ Processing time metrics
+- ❌ Success/failure rates
+- ❌ Content type analytics
+- ❌ User usage patterns
+- ✅ URL validation metrics (partially implemented through logging)
+
+## 🔄 INTEGRATION WITH COMPLETED WORK
+
+### URL Validation Integration Points:
+All new content processing features should integrate with the completed URL validation system:
+
+1. **Content-Extracted URLs**: Validate any URLs found within processed content
+2. **Topic-Related Links**: Validate URLs suggested in generated debate topics  
+3. **Source Validation**: Use URL validation for YouTube and podcast source URLs
+4. **Reading Recommendations**: Already integrated ✅
+5. **Visual Indicators**: Use existing ReadingListItem validation indicators for content URLs
+
+### UI Integration Points:
+Leverage completed UI improvements:
+
+1. **Tab Functionality**: Use fixed tab system for content processing interface ✅
+2. **Loading States**: Apply enhanced loading patterns to content processing ✅
+3. **Error Handling**: Use improved error messaging patterns ✅
+4. **Navigation**: Ensure content features integrate with fixed navigation ✅
+
+## 🎯 UPDATED PRIORITIES
+
+### HIGH PRIORITY (Next Steps):
+1. **Install Dependencies** (Step 1) - Required for enhanced functionality
+2. **Enhance Unified API Endpoint** (Step 2) - Integrate URL validation
+3. **Update ContentUploader** (Step 4) - Leverage existing UI improvements
+
+### MEDIUM PRIORITY:
+4. **Firebase Schema Enhancement** (Step 3) - Data layer for content management
+5. **Content Processing Libraries** (Step 5) - Modular processing functions
+6. **Enhanced Topic Generation** (Step 6) - Better AI integration
+
+### LOWER PRIORITY (Future Enhancement):
+7. **Complete Debate Integration** (Step 7) - Advanced content-debate linking
+8. **AI Agent Context** (Step 8) - Enhanced AI content awareness
+9. **Content Management UI** (Step 9) - User content library
+10. **Monitoring & Analytics** (Step 10) - Advanced metrics
+
+## Future Evolution to Option 2 (Asynchronous Processing)
+
+### Phase 2 Preparation Built-in:
+1. **Status Tracking**: Ready to implement with current architecture
+2. **Job Management**: Schema design ready for background jobs
+3. **Polling Infrastructure**: Can leverage existing real-time patterns
+4. **Modular Architecture**: URL validation system provides model for background processing
+5. **Error Handling**: Enhanced error handling patterns established ✅
+
+### Phase 2 Implementation Path:
+1. Create background job processor API routes
+2. Implement job queue management
+3. Add real-time status updates via Firebase listeners (leveraging existing Firebase integration)
+4. Move heavy processing to background tasks
+5. Update UI to handle asynchronous workflow (using established loading state patterns ✅)
+
+## Recent Achievements Impact
+
+### Positive Impacts on Remaining Work:
+- **URL Validation System**: Provides robust foundation for validating content-extracted URLs
+- **Enhanced UI Patterns**: Established patterns for loading states, error handling, and user feedback
+- **Performance Optimization**: Parallel processing patterns can be applied to content processing
+- **Documentation**: Comprehensive debugging and architecture documentation in place
+
+### New Considerations:
+- **URL Validation Integration**: All content processing should leverage the URL validation system
+- **Performance Standards**: 10-15 second response times established for URL validation can guide content processing timeouts
+- **Error Handling Patterns**: Graceful degradation patterns established for URL validation should be applied to content processing
+- **User Experience**: Enhanced loading and feedback patterns should be consistent across all features
+
+## Success Metrics (Updated)
+
+### Performance Metrics:
+- ✅ URL validation completion time < 15 seconds
+- ✅ Reading recommendations reliability > 90% (with validation)
+- ❌ Content processing completion time < 30 seconds (to implement)
+- ❌ Success rate > 95% for valid content inputs (to measure)
+
+### User Experience Metrics:
+- ✅ UI responsiveness improved with working tabs and navigation
+- ✅ Clear error messaging and validation status indicators
+- ❌ User satisfaction with content processing features (to measure)
+- ❌ Integration quality between content and debates (to implement)
+

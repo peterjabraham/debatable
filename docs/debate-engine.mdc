@@ -1,0 +1,136 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Debate Engine
+
+This rule describes the core Debate Engine of the Debate-able application, which manages debates between AI-powered experts on user-selected topics.
+
+## Architecture
+
+- **Client-Side State Management**: Zustand store manages debate state
+- **Server-Side Processing**: Next.js API routes handle expert generation and response creation
+- **External API Integration**: OpenAI (and optionally Perplexity) for content generation
+- **Reading Recommendations**: Perplexity API with URL validation for reliable external sources
+
+## Key Components
+
+### UI Components
+- **DebatePanel.tsx**: Main container for the debate interface
+- **ExpertCard.tsx**: Displays expert information and stance
+- **MessageBubble.tsx**: Renders individual debate messages
+- **UserInput.tsx**: Handles user input for topic selection and messages
+- **ReadingListItem.tsx**: Displays recommended readings with URL validation indicators
+  - **URL Status Icons**: Green checkmark (verified), yellow warning (unverified), red X (broken)
+  - **Source Type Badges**: Academic, Book, Reddit Community, News, Media
+  - **Validation Warnings**: Clear messaging for potentially broken links
+
+### State Management
+- **Zustand Store** (`src/lib/store.ts`): Manages debate state across components
+- Core state includes:
+  - Topic information
+  - Selected experts
+  - Message history
+  - UI step progression
+  - Loading states
+  - **Reading recommendations with validation status**
+
+### API Routes
+- **/api/debate/response**: Generates expert responses
+- **/api/debate/history**: Retrieves debate history
+- **/api/debate-experts**: Selects appropriate experts for a topic
+- **/api/perplexity/single-expert**: Fetches validated reading recommendations
+
+## Core Workflows
+
+### 1. Topic Selection
+- User can input a topic directly or upload content
+- Content processing extracts key topics and arguments
+- Topic is stored in Zustand state for subsequent steps
+
+### 2. Expert Selection
+- Topic is sent to API for expert generation
+- AI generates contextually appropriate experts with diverse perspectives
+- Experts are displayed to user for approval before debate starts
+- Experts have unique IDs, names, expertise areas, and stances
+
+### 3. Reading Recommendations (Enhanced)
+- **Perplexity API Integration**: Fetches diverse reading materials for debate topics
+- **URL Validation Process**:
+  - Concurrent validation of all recommended URLs
+  - HEAD requests to verify link accessibility (10-second timeout per URL)
+  - Smart filtering removes obviously fake URLs (example.com, placeholders)
+  - Redirects (301/302) are accepted as valid
+- **Reddit Community Focus**: Provides stable subreddit URLs instead of specific posts
+  - Examples: `reddit.com/r/psychology`, `reddit.com/r/artificial`, `reddit.com/r/philosophy`
+  - More reliable than individual posts that may be deleted or archived
+- **Source Diversification**: Ensures balanced mix of academic, media, and community sources
+- **Visual Indicators**: UI shows validation status with clear icons and warnings
+
+### 4. Message Generation
+- Initial expert statements are generated based on topic
+- Subsequent messages consider prior context
+- Messages contain:
+  - Expert ID for attribution
+  - Content (with optional citations)
+  - Timestamp
+  - Message type (opening, response, conclusion)
+
+### 5. Debate Flow
+- Typically follows a structured format:
+  - Opening statements
+  - Responses/rebuttals
+  - Optional user questions
+  - Concluding statements
+- Messages are stored in Firestore and local state
+
+## Performance Considerations
+
+### Core Performance
+- Expert generation can be computationally expensive
+- Response generation requires context window management
+- Debate state (especially message history) can grow large
+- Zustand selectors should be used to prevent unnecessary re-renders
+- Consider memoization for components that render message lists
+
+### Reading Recommendations Performance
+- **URL Validation Impact**: Adds 5-15 seconds to initial loading
+- **Parallel Processing**: Multiple URLs validated concurrently
+- **Graceful Degradation**: System works even if validation fails
+- **Caching Opportunities**: Validated URLs could be cached for reuse
+- **Reddit Stability**: Subreddit URLs require less frequent validation than post URLs
+
+### Optimization Strategies
+- **Progressive Loading**: Show unvalidated recommendations immediately, update with validation status
+- **Background Validation**: Validate URLs in background while user reviews other content
+- **Smart Caching**: Cache validation results to avoid re-checking the same URLs
+- **Fallback Strategy**: When all URLs fail validation, show with clear warnings rather than empty results
+
+## Error Handling
+
+### URL Validation Errors
+- **Network Timeouts**: 10-second timeout prevents hanging requests
+- **HTTP Errors**: 404, 403, 500 status codes are handled gracefully
+- **DNS Failures**: Domain resolution errors are caught and logged
+- **CORS Issues**: Cross-origin restrictions are detected and reported
+
+### Fallback Mechanisms
+- **Partial Validation Failure**: If some URLs fail, valid ones are still shown
+- **Complete Validation Failure**: Original URLs shown with "(URL not verified)" disclaimer
+- **API Unavailability**: System continues working without reading recommendations
+
+## Reading Recommendations Integration
+
+### Enhanced Perplexity Prompts
+- **Explicit URL Requirements**: Prompts specifically request real, working URLs
+- **Source Guidelines**: Suggests legitimate sources (Google Scholar, arXiv, Archive.org)
+- **Reddit Instructions**: Requests subreddit URLs rather than specific posts
+- **Quality Standards**: Emphasizes fewer high-quality sources over many questionable ones
+
+### UI Enhancement Features
+- **Validation Status Display**: Clear visual indicators for URL status
+- **Source Type Differentiation**: Color-coded badges for different source types
+- **Warning Systems**: Clear messaging for potentially problematic links
+- **Accessibility**: All status indicators include tooltips and screen reader support
+

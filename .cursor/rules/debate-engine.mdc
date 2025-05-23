@@ -1,0 +1,75 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Debate Engine
+
+This rule describes the core Debate Engine of the Debate-able application, which manages debates between AI-powered experts on user-selected topics.
+
+## Architecture
+
+- **Client-Side State Management**: Zustand store manages debate state
+- **Server-Side Processing**: Next.js API routes handle expert generation and response creation
+- **External API Integration**: OpenAI (and optionally Perplexity) for content generation
+
+## Key Components
+
+### UI Components
+- **DebatePanel.tsx**: Main container for the debate interface
+- **ExpertCard.tsx**: Displays expert information and stance
+- **MessageBubble.tsx**: Renders individual debate messages
+- **UserInput.tsx**: Handles user input for topic selection and messages
+
+### State Management
+- **Zustand Store** (`src/lib/store.ts`): Manages debate state across components
+- Core state includes:
+  - Topic information
+  - Selected experts
+  - Message history
+  - UI step progression
+  - Loading states
+
+### API Routes
+- **/api/debate/response**: Generates expert responses
+- **/api/debate/history**: Retrieves debate history
+- **/api/debate-experts**: Selects appropriate experts for a topic
+
+## Core Workflows
+
+### 1. Topic Selection
+- User can input a topic directly or upload content
+- Content processing extracts key topics and arguments
+- Topic is stored in Zustand state for subsequent steps
+
+### 2. Expert Selection
+- Topic is sent to API for expert generation
+- AI generates contextually appropriate experts with diverse perspectives
+- Experts are displayed to user for approval before debate starts
+- Experts have unique IDs, names, expertise areas, and stances
+
+### 3. Message Generation
+- Initial expert statements are generated based on topic
+- Subsequent messages consider prior context
+- Messages contain:
+  - Expert ID for attribution
+  - Content (with optional citations)
+  - Timestamp
+  - Message type (opening, response, conclusion)
+
+### 4. Debate Flow
+- Typically follows a structured format:
+  - Opening statements
+  - Responses/rebuttals
+  - Optional user questions
+  - Concluding statements
+- Messages are stored in Firestore and local state
+
+## Performance Considerations
+
+- Expert generation can be computationally expensive
+- Response generation requires context window management
+- Debate state (especially message history) can grow large
+- Zustand selectors should be used to prevent unnecessary re-renders
+- Consider memoization for components that render message lists
+

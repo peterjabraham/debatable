@@ -1,0 +1,89 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Backend Architecture Overview
+
+This rule provides a high-level understanding of the Debate-Able application's architecture. It describes the main components, their interactions, and data flows.
+
+## System Components
+
+### Client Side
+- **React Frontend**: Main UI interface
+  - **UI Components**: Reusable UI elements
+  - **Voice Controls**: Interface for voice-based interactions
+  - **Theme Provider**: Manages application theming
+  - **Error Boundaries**: Handles client-side error cases
+  - **React Hooks**: Custom hooks for state and API interactions
+
+### Server Side
+- **Next.js API Routes**: Server-side endpoints handling various application operations
+
+#### Content Processing
+- **Document Parser**: Processes uploaded documents
+- **Link Processor**: Handles external link content
+- **Media Processor**: Processes media files
+- **Topic Extractor**: Extracts key topics from content (uses OpenAI API)
+
+#### AI Engine
+- **Expert Generator**: Creates expert profiles for debates
+- **Expert Response Generator**: Generates expert responses
+- **Debate Manager**: Coordinates debate flow and state
+- **Context Manager**: Maintains context for AI responses
+- **Debate Summarizer**: Creates summaries of debates
+
+#### Data Storage
+- **Firebase Admin SDK**: Server-side Firebase access
+- **Firestore Collections**: Database collections for app data
+- **Client Libraries**: Client-side Firebase access
+- **Mock Implementations**: Test doubles for development/testing
+
+#### Server Middleware
+- **Next Auth**: Authentication system
+- **Rate Limiting**: Controls API request rates
+- **Error Handling**: Manages server-side errors
+- **Response Caching**: Caches responses for performance
+
+### External Services
+- **OpenAI API**: Used for AI-based text generation and analysis
+- **Perplexity API**: Alternative AI service for response generation
+- **Firebase Services**: Cloud database and authentication
+- **ElevenLabs API**: Voice synthesis service
+
+## Key Data Flows
+
+1. **Content Processing Flow**:
+   - Content (docs, links, media) → Parsers → Topic Extractor
+   - Topic Extractor → Expert Generator
+
+2. **Debate Flow**:
+   - API → Debate Manager → Response Generator → Firestore Collections
+   - Context Manager → Response Generator
+   - Expert Generator → Response Generator
+
+3. **Authentication Flow**:
+   - Auth middleware validates requests to API routes
+   - Auth connects to Firebase for user management
+
+4. **External AI Services**:
+   - Expert Generator, Response Generator, Topic Extractor, and Summarizer use OpenAI API
+   - Response Generator may alternatively use Perplexity API
+
+5. **Voice Synthesis**:
+   - Voice Controls → API → ElevenLabs API
+
+## Critical Components
+
+The most critical components for application performance and stability are:
+- The AI Engine subsystem (especially Response Generator)
+- Firebase data storage (particularly for debate state)
+- Content Processing pipeline (for initial content analysis)
+
+## Architecture Notes
+
+- Client-side state is managed through React hooks that interface with Firebase client libraries
+- Error handling exists at multiple levels (client error boundaries, server middleware)
+- Firebase is used both directly from the client and through the server (Admin SDK)
+- Mock implementations can substitute for real services during development and testing
+

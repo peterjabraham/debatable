@@ -7,14 +7,7 @@ const path = require('path');
 let isApiServerAvailable = null;
 
 // IMPORTANT: Only set these values if they haven't been set in .env.local
-if (!process.env.API_SERVER_ENABLED) process.env.API_SERVER_ENABLED = 'false';
-if (!process.env.MOCK_API) process.env.MOCK_API = 'false';
-if (!process.env.USE_MOCK_DATA) process.env.USE_MOCK_DATA = 'false';
 if (!process.env.NEXT_PUBLIC_USE_REAL_API) process.env.NEXT_PUBLIC_USE_REAL_API = 'true';
-if (!process.env.DISABLE_API_TESTING) process.env.DISABLE_API_TESTING = 'false';
-
-// Check if API server should be enabled from environment
-const apiServerEnabled = process.env.API_SERVER_ENABLED === 'true';
 
 const nextConfig = {
     eslint: {
@@ -52,43 +45,49 @@ const nextConfig = {
     // Environment variables to be available at build time
     env: {
         // Use values from .env.local or fallback to defaults
-        USE_MOCK_DATA: process.env.USE_MOCK_DATA || 'false',
         NEXT_PUBLIC_USE_REAL_API: process.env.NEXT_PUBLIC_USE_REAL_API || 'true',
-        DISABLE_API_TESTING: process.env.DISABLE_API_TESTING || 'false',
-        API_SERVER_ENABLED: process.env.API_SERVER_ENABLED || 'false',
-        MOCK_API: process.env.MOCK_API || 'false',
-        MVP_CONFIG_API_SERVER_AVAILABLE: process.env.MVP_CONFIG_API_SERVER_AVAILABLE || 'false'
+    },
+
+    // Configure headers for API routes to handle CORS properly
+    async headers() {
+        return [
+            {
+                // Apply these headers to all API routes
+                source: '/api/:path*',
+                headers: [
+                    { key: 'Access-Control-Allow-Credentials', value: 'true' },
+                    { key: 'Access-Control-Allow-Origin', value: '*' },
+                    { key: 'Access-Control-Allow-Methods', value: 'GET,DELETE,PATCH,POST,PUT,OPTIONS' },
+                    { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version' },
+                ],
+            },
+        ];
     },
 
     // Redirect API calls to our dedicated Express server
     async rewrites() {
-        if (!apiServerEnabled) {
-            console.log("API server explicitly disabled - using built-in Next.js API routes");
+        console.log("Using built-in Next.js API routes - rewrites disabled");
 
-            // Update global config to reflect server unavailability
-            try {
-                // Use value from environment if available
-                global.API_SERVER_AVAILABLE = process.env.MVP_CONFIG_API_SERVER_AVAILABLE === 'true';
+        // Update global config to reflect server unavailability
+        try {
+            // Simplify: Assume API server is not available as we removed the check
+            global.API_SERVER_AVAILABLE = false; // Directly set to false
 
-                // Create a flag file to communicate to client-side code
-                const publicFlagPath = path.join(__dirname, 'public', 'api-status.json');
-                fs.writeFileSync(
-                    publicFlagPath,
-                    JSON.stringify({
-                        apiServerAvailable: global.API_SERVER_AVAILABLE,
-                        timestamp: new Date().toISOString()
-                    }),
-                    'utf8'
-                );
-            } catch (e) {
-                console.error("Error setting API availability flags:", e);
-            }
-
-            // Force empty rewrites - no proxying
-            return [];
+            // Create a flag file to communicate to client-side code
+            const publicFlagPath = path.join(__dirname, 'public', 'api-status.json');
+            fs.writeFileSync(
+                publicFlagPath,
+                JSON.stringify({
+                    apiServerAvailable: global.API_SERVER_AVAILABLE,
+                    timestamp: new Date().toISOString()
+                }),
+                'utf8'
+            );
+        } catch (e) {
+            console.error("Error setting API availability flags:", e);
         }
 
-        // Other rewrites would go here if API server enabled
+        // Force empty rewrites - no proxying
         return [];
     },
 
@@ -109,6 +108,14 @@ const nextConfig = {
         };
 
         return config;
+    },
+
+    // Enable better error logging for API routes
+    onDemandEntries: {
+        // Period (in ms) where the server will keep pages in the buffer
+        maxInactiveAge: 25 * 1000,
+        // Number of pages that should be kept simultaneously without being disposed
+        pagesBufferLength: 2,
     }
 };
 

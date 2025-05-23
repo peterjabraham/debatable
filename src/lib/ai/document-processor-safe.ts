@@ -21,10 +21,6 @@ export class SafeDocumentProcessor {
     // Storage for documents (in memory for simplicity)
     private static storage: Record<string, Array<{ text: string; embedding: number[] }>> = {};
 
-    // Flag to indicate if we're using real embeddings or mocks
-    private static useRealEmbeddings = process.env.NODE_ENV === 'production' ||
-        process.env.NEXT_PUBLIC_USE_REAL_API === 'true';
-
     /**
      * Process a document safely without external dependencies
      */
@@ -35,7 +31,6 @@ export class SafeDocumentProcessor {
     ): Promise<{ success: boolean; chunkCount?: number; error?: string }> {
         try {
             console.log(`[SafeDocumentProcessor] Processing document: ${fileName} for debate: ${debateId}`);
-            console.log(`[SafeDocumentProcessor] Using real embeddings: ${this.useRealEmbeddings}`);
 
             // Extract text from the buffer (in a real implementation, this would parse the document)
             const text = fileBuffer.toString('utf8');
@@ -43,28 +38,24 @@ export class SafeDocumentProcessor {
             // Split text into chunks (simplified)
             const chunks = text.split(/(?<=\.)\s+/).filter(Boolean).slice(0, 20); // Limit chunks 
 
-            // Process chunks with real embeddings or mocks
+            // Process chunks - always use real embeddings
             const processedChunks = await Promise.all(
                 chunks.map(async (chunk) => {
                     let embedding;
 
-                    if (this.useRealEmbeddings) {
-                        try {
-                            // Get real embeddings from OpenAI
-                            const embeddingResponse = await openai.embeddings.create({
-                                model: "text-embedding-3-small",
-                                input: chunk.trim(),
-                            });
+                    try {
+                        // Get real embeddings from OpenAI
+                        const embeddingResponse = await openai.embeddings.create({
+                            model: "text-embedding-3-small",
+                            input: chunk.trim(),
+                        });
 
-                            embedding = embeddingResponse.data[0].embedding;
-                            console.log(`[SafeDocumentProcessor] Got real embedding for chunk with length ${chunk.length}`);
-                        } catch (error) {
-                            console.error('[SafeDocumentProcessor] Error getting embedding, falling back to mock:', error);
-                            embedding = Array(1536).fill(0).map(() => Math.random());
-                        }
-                    } else {
-                        // Mock embedding (1536 dimensions to match OpenAI)
-                        embedding = Array(1536).fill(0).map(() => Math.random());
+                        embedding = embeddingResponse.data[0].embedding;
+                        console.log(`[SafeDocumentProcessor] Got real embedding for chunk with length ${chunk.length}`);
+                    } catch (error) {
+                        console.error('[SafeDocumentProcessor] Error getting embedding:', error);
+                        // Throw or handle error appropriately, removed mock fallback
+                        throw new Error('Failed to get embedding for document chunk');
                     }
 
                     return {
@@ -126,7 +117,6 @@ export class SafeDocumentProcessor {
     ): Promise<RetrievalResult[]> {
         try {
             console.log(`[SafeDocumentProcessor] Retrieving content for query: "${query}" in debate: ${debateId}`);
-            console.log(`[SafeDocumentProcessor] Using real embeddings: ${this.useRealEmbeddings}`);
 
             // Check if we have documents for this debate
             const chunks = this.storage[debateId] || [];
@@ -137,34 +127,19 @@ export class SafeDocumentProcessor {
 
             let queryEmbedding: number[];
 
-            if (this.useRealEmbeddings) {
-                try {
-                    // Get real embedding for the query
-                    const embeddingResponse = await openai.embeddings.create({
-                        model: "text-embedding-3-small",
-                        input: query.trim(),
-                    });
+            try {
+                // Get real embedding for the query
+                const embeddingResponse = await openai.embeddings.create({
+                    model: "text-embedding-3-small",
+                    input: query.trim(),
+                });
 
-                    queryEmbedding = embeddingResponse.data[0].embedding;
-                    console.log(`[SafeDocumentProcessor] Got real embedding for query`);
-                } catch (error) {
-                    console.error('[SafeDocumentProcessor] Error getting query embedding, falling back to random scoring:', error);
-                    // Fall back to random scores if embedding fails
-                    return chunks.map(chunk => ({
-                        text: chunk.text,
-                        score: Math.random()
-                    }))
-                        .sort((a, b) => b.score - a.score)
-                        .slice(0, topK);
-                }
-            } else {
-                // Fall back to random scores for development
-                return chunks.map(chunk => ({
-                    text: chunk.text,
-                    score: Math.random()
-                }))
-                    .sort((a, b) => b.score - a.score)
-                    .slice(0, topK);
+                queryEmbedding = embeddingResponse.data[0].embedding;
+                console.log(`[SafeDocumentProcessor] Got real embedding for query`);
+            } catch (error) {
+                console.error('[SafeDocumentProcessor] Error getting query embedding:', error);
+                // Removed random scoring fallback
+                return []; // Return empty if query embedding fails
             }
 
             // Calculate real similarity scores using embeddings

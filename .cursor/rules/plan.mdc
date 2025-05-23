@@ -1,0 +1,299 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Content Processing Implementation Plan
+
+## Overview
+This plan implements Option 1 (Synchronous Server-Side Processing) for PDF upload, YouTube URL, and Podcast URL content processing, designed to evolve to Option 2 (Asynchronous Processing) later.
+
+## Implementation Strategy
+- **Phase 1**: Synchronous processing with proper status tracking
+- **Phase 2**: Evolution to asynchronous processing (future)
+- **Integration**: Seamless integration with existing Supporter/Opposer/User chat interface
+- **Context Maintenance**: Ensure debate context is preserved throughout the chat
+
+## Step-by-Step Implementation Plan
+
+### Step 1: Install Required Dependencies
+**Files Affected**: `package.json`
+
+**Description**: Add necessary dependencies for content processing
+- `pdf-parse`: Already installed ✓
+- `youtube-transcript`: For fetching YouTube transcripts
+- `rss-parser`: For parsing podcast RSS feeds
+- `node-fetch`: Already installed ✓
+
+**Dependencies to Add**:
+- `youtube-transcript@^1.2.1`
+- `rss-parser@^3.13.0`
+
+**Command**: `npm install youtube-transcript@^1.2.1 rss-parser@^3.13.0`
+
+### Step 2: Create Centralized Content Processing API Route
+**Files Affected**: 
+- `src/app/api/content/process-source/route.ts` (new)
+
+**Description**: Create a unified API endpoint that handles all content types (PDF, YouTube, Podcast) with status tracking designed for future async evolution.
+
+**Functions/Components**:
+- `POST()`: Main processing handler
+- `OPTIONS()`: CORS preflight handler
+- `downloadAudioToTempFile()`: Helper for podcast audio download
+- `validateInput()`: Input validation
+- `updateProcessingStatus()`: Status tracking helper
+
+**Features**:
+- Input validation for all content types
+- Status tracking (pending → extracting_text → generating_topics → completed)
+- Error handling with detailed logging
+- Firestore integration for storing processing results
+- OpenAI integration for topic generation
+
+### Step 3: Enhance Firebase Schema for Content Storage
+**Files Affected**:
+- `src/lib/db/firestore.ts` (update COLLECTIONS)
+- `src/types/content.ts` (new)
+
+**Description**: Extend Firebase schema to store processed content and generated topics.
+
+**New Collections**:
+- `userContent`: Stores processed content metadata and topics
+- `contentJobs`: For future async processing (status tracking)
+
+**Schema Structure**:
+```typescript
+interface ProcessedContent {
+  id: string;
+  userId: string;
+  sourceType: 'pdf' | 'youtube' | 'podcast';
+  sourceName: string;
+  sourceUrl?: string;
+  status: 'pending' | 'extracting_text' | 'generating_topics' | 'completed' | 'failed';
+  extractedText?: string;
+  textStoragePath?: string; // For large texts stored in Firebase Storage
+  debateTopics: DebateTopic[];
+  createdAt: string;
+  updatedAt: string;
+  errorMessage?: string;
+}
+
+interface DebateTopic {
+  title: string;
+  summary: string;
+  confidence?: number;
+}
+```
+
+### Step 4: Update ContentUploader Component
+**Files Affected**:
+- `src/components/content-processing/ContentUploader.tsx` (major update)
+
+**Description**: Refactor to use the new unified API endpoint and handle all content types.
+
+**Changes**:
+- Update UI to include Podcast URL input
+- Modify API call to use `/api/content/process-source`
+- Add status polling capability (for future async support)
+- Improve error handling and user feedback
+- Add loading states for different processing stages
+
+**New Functions**:
+- `handleContentProcessing()`: Unified content processing handler
+- `pollProcessingStatus()`: For future async support
+- `validateContentInput()`: Client-side validation
+
+### Step 5: Create Content Processing Library Functions
+**Files Affected**:
+- `src/lib/content-processing/podcast-processor.ts` (new)
+- `src/lib/content-processing/youtube-processor.ts` (new)
+- `src/lib/content-processing/index.ts` (update exports)
+
+**Description**: Create modular content processing functions for different content types.
+
+**podcast-processor.ts Functions**:
+- `extractPodcastText()`: Download and transcribe podcast audio
+- `parsePodcastRss()`: Parse RSS feed to get audio URL
+- `downloadPodcastAudio()`: Download audio file
+
+**youtube-processor.ts Functions**:
+- `extractYouTubeText()`: Fetch transcript from YouTube
+- `validateYouTubeUrl()`: URL validation
+- `getVideoMetadata()`: Extract video metadata
+
+### Step 6: Enhanced Topic Generation
+**Files Affected**:
+- `src/lib/content-processing/topic-extractor.ts` (update)
+
+**Description**: Improve topic generation with better prompting and error handling.
+
+**Enhancements**:
+- More sophisticated prompts for different content types
+- Fallback topic generation strategies
+- Confidence scoring for topics
+- Context-aware topic extraction
+
+**New Functions**:
+- `generateTopicsForContentType()`: Content-type specific topic generation
+- `validateTopicStructure()`: Ensure proper topic format
+- `generateFallbackTopics()`: Fallback when AI fails
+
+### Step 7: Integrate with Debate System
+**Files Affected**:
+- `src/lib/store.ts` (update Zustand store)
+- `src/components/debate/DebatePanel.tsx` (update)
+
+**Description**: Integrate processed content with the existing debate system.
+
+**Store Updates**:
+- Add `processedContent` state
+- Add `selectedContentId` for linking debates to source content
+- Add actions for content selection and management
+
+**DebatePanel Updates**:
+- Add content selection UI
+- Pass source content context to AI agents
+- Maintain content reference throughout debate
+
+### Step 8: Update AI Agent Context
+**Files Affected**:
+- `src/lib/ai/expert-selector.ts` (update)
+- `src/lib/ai/response-generator.ts` (update)
+
+**Description**: Enhance AI agents to use source content context in debates.
+
+**Changes**:
+- Include source content summary in expert selection
+- Reference original content in debate responses
+- Maintain context consistency throughout debate
+
+### Step 9: Add Content Management UI
+**Files Affected**:
+- `src/components/content-processing/ContentLibrary.tsx` (new)
+- `src/app/content/page.tsx` (new)
+
+**Description**: Create UI for users to manage their processed content.
+
+**Features**:
+- List all processed content
+- View processing status
+- Select content for debates
+- Delete content
+- Re-process failed content
+
+### Step 10: Error Handling and Monitoring
+**Files Affected**:
+- `src/lib/errors/content-processing-errors.ts` (new)
+- `src/lib/monitoring/content-metrics.ts` (new)
+
+**Description**: Implement comprehensive error handling and monitoring.
+
+**Error Handling**:
+- Custom error classes for different failure types
+- Graceful degradation strategies
+- User-friendly error messages
+- Retry mechanisms
+
+**Monitoring**:
+- Processing time metrics
+- Success/failure rates
+- Content type analytics
+- User usage patterns
+
+## Future Evolution to Option 2 (Asynchronous Processing)
+
+### Phase 2 Preparation Built-in:
+1. **Status Tracking**: Already implemented in Phase 1
+2. **Job Management**: Schema ready for background jobs
+3. **Polling Infrastructure**: Client-side polling capability included
+4. **Modular Architecture**: Processing functions can be easily moved to background workers
+
+### Phase 2 Implementation Path:
+1. Create background job processor API routes
+2. Implement job queue management
+3. Add real-time status updates via WebSockets or Firebase listeners
+4. Move heavy processing (audio transcription) to background tasks
+5. Update UI to handle asynchronous workflow
+
+## Integration Points with Existing System
+
+### Debate Engine Integration:
+- Source content ID stored in debate metadata
+- AI agents receive content context in system prompts
+- Topic selection pre-populates from processed content
+- Citation capability links back to source material
+
+### Firebase Integration:
+- Uses existing Firestore setup
+- Follows existing collection patterns
+- Integrates with user authentication
+- Maintains data consistency
+
+### UI/UX Integration:
+- Follows existing design patterns
+- Uses established component library
+- Maintains consistent user experience
+- Integrates with existing navigation
+
+## Testing Strategy
+
+### Unit Tests:
+- Content processing functions
+- Topic generation accuracy
+- Error handling scenarios
+- Firebase operations
+
+### Integration Tests:
+- End-to-end content processing workflow
+- Debate system integration
+- API endpoint functionality
+- UI component behavior
+
+### Performance Tests:
+- Processing time for different content sizes
+- Memory usage during processing
+- Concurrent processing handling
+- Database query performance
+
+## Security Considerations
+
+### Input Validation:
+- File type and size restrictions
+- URL validation and sanitization
+- Content scanning for malicious material
+- Rate limiting for processing requests
+
+### Data Protection:
+- Secure storage of processed content
+- User data isolation
+- Temporary file cleanup
+- API key protection
+
+## Success Metrics
+
+### Performance Metrics:
+- Processing completion time < 30 seconds for most content
+- Success rate > 95% for valid inputs
+- User satisfaction with generated topics
+- System stability under load
+
+### Business Metrics:
+- Increased user engagement with content features
+- Higher debate initiation rates
+- Improved debate quality and context
+- User retention improvements
+
+## Rollback Plan
+
+### Phase 1 Rollback:
+- Keep existing content processing endpoints as fallback
+- Feature flags for new functionality
+- Database schema versioning
+- Progressive rollout capability
+
+### Data Migration:
+- Backward compatibility maintained
+- Existing data preserved
+- Migration scripts for schema updates
+- Rollback procedures documented

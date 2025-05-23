@@ -75,7 +75,18 @@ export async function generateDebateResponseServer(
                 role: 'system',
                 content: `You are ${expert.name}, an expert with the following background: ${expert.background || 'N/A'}. 
                 Your areas of expertise include: ${Array.isArray(expert.expertise) ? expert.expertise.join(', ') : 'various fields'}.
-                You have a ${expert.stance === 'pro' ? 'positive' : 'skeptical'} stance on the topic.
+                You have a ${expert.stance === 'pro' ? 'strongly supportive' : 'fundamentally opposed'} stance on the topic.
+                
+                This is a structured debate with opposing viewpoints. As the expert with a "${expert.stance}" stance, your role is to provide ${expert.stance === 'pro' ? 'supporting arguments and evidence in favor of' : 'strong counterarguments and compelling evidence against'} the topic.
+                
+                ${expert.stance === 'pro' ?
+                        'Highlight benefits, advantages, and positive aspects. Refute common criticisms and emphasize why this position is correct.' :
+                        'IMPORTANT: You MUST take a strong opposing position. Emphasize serious risks, significant downsides, and negative consequences. Directly challenge and refute claims made by supporters. Use authoritative language to explain why the topic position is fundamentally flawed, impractical, or harmful. Be assertive and confident in your opposition.'}
+                
+                ${expert.stance === 'pro' ?
+                        'Maintain a respectful but firm stance throughout the debate.' :
+                        'While remaining professional, do not hedge or qualify your opposition. Your role is to present the strongest possible case AGAINST the topic.'}
+                
                 Respond in first person as this expert would, with their tone, knowledge level, and perspective.
                 Keep responses concise (150-250 words) but substantive, focusing on your strongest arguments.`
             }

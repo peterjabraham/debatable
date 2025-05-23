@@ -1,0 +1,660 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Debugging Guide for Debate-able
+
+This rule provides a guide for debugging common issues in the Debate-able application, with particular focus on the topic selection and expert generation flow.
+
+## Console Log Patterns
+
+When debugging issues, look for the following log patterns to understand application state and flow:
+
+### Topic Selection Flow
+
+1. **User selects a topic:**
+   ```
+   Topic selected: [TOPIC TEXT] with data: Object
+   ```
+
+2. **Topic initialization:**
+   ```
+   useEffect triggered: Initializing debate with topic and type.
+   ### DEBUG: initializeDebateWithTopic called ###
+   - Topic from store: {...}
+   - Selected Topic state: [TOPIC TEXT]
+   - User Topic state: [TOPIC TEXT]
+   - Participant Type: [TYPE]
+   - Experts Length: [NUMBER]
+   - ExpertsLoading: [BOOLEAN]
+   - ExpertsSelected: [BOOLEAN]
+   ```
+
+3. **Expert selection request:**
+   ```
+   Request body: {"action":"select-experts","topic":"[TOPIC TEXT]","expertType":"[TYPE]","count":2,"requireOpposing":true}
+   Using expert type: [TYPE] (from store: [TYPE])
+   ```
+
+4. **Expert selection response:**
+   ```
+   Response status: [STATUS CODE]
+   Raw API response: {"status":"success","experts":[...]}
+   Selected experts: (2) [{…}, {…}]
+   ```
+
+### Reading Recommendations Flow
+
+1. **Perplexity API request:**
+   ```
+   [getExpertRecommendedReading] Starting request for topic: "[TOPIC]" (expert: [EXPERT_NAME], type: [TYPE])
+   [getExpertRecommendedReading] 🔑 API key check - Length: [LENGTH], First chars: [CHARS]..., API URL: https://api.perplexity.ai/chat/completions
+   [serverFetchFromPerplexity] Attempting fetch to https://api.perplexity.ai/chat/completions. Key used (masked): [MASKED_KEY]
+   ```
+
+2. **Perplexity API response:**
+   ```
+   [serverFetchFromPerplexity] Response status from https://api.perplexity.ai/chat/completions: 200
+   [getExpertRecommendedReading] Raw content from API (first 200 chars): [CONTENT_PREVIEW]...
+   [getExpertRecommendedReading] Successfully extracted [NUMBER] readings from response
+   ```
+
+3. **URL validation process:**
+   ```
+   [validateReadingUrls] Starting validation of [NUMBER] URLs
+   [validateUrl] Checking URL: https://example.com/resource
+   [validateUrl] URL https://example.com/resource validation result: VALID/INVALID (status: [STATUS_CODE])
+   [validateReadingUrls] Validation complete. Valid: [VALID_COUNT], Invalid: [INVALID_COUNT]
+   [validateReadingUrls] Removed invalid URLs: ["url1", "url2", ...]
+   ```
+
+4. **URL validation completion:**
+   ```
+   [getExpertRecommendedReading] No valid URLs found for topic: "[TOPIC]". All [NUMBER] URLs were invalid.
+   [getExpertRecommendedReading] Many invalid URLs found for topic: "[TOPIC]". Valid: [VALID]/[TOTAL]
+   [getExpertRecommendedReading] Returning [NUMBER] validated readings for topic: "[TOPIC]"
+   ```
+
+### Document Upload and Processing
+
+1. **Document upload start:**
+   ```
+   [ContentUploader] Starting content processing for tab: document
+   [ContentUploader] Uploading document: [FILENAME]
+   ```
+
+2. **API request:**
+   ```
+   [ContentUploader] Sending request to: /api/content/document
+   ```
+
+3. **API response success:**
+   ```
+   [ContentUploader] Response status: 200, statusText: OK
+   [ContentUploader] Raw response: {"message":"Document processed successfully","topics":[...]}
+   ```
+
+4. **API response error:**
+   ```
+   [ContentUploader] API responded with error status: [STATUS]
+   [ContentUploader] Error details: [ERROR_MESSAGE]
+   ```
+
+### Firebase Operations
+
+1. **Firestore read operation:**
+   ```
+   Fetching debate with ID: [DEBATE_ID]
+   ```
+
+2. **Firestore write operation:**
+   ```
+   Saving debate with ID: [DEBATE_ID]
+   Updated debate in Firestore: [DEBATE_OBJECT]
+   ```
+
+3. **Firebase authentication:**
+   ```
+   User authenticated: [USER_ID]
+   ```
+
+### Common Error States
+
+Look for these patterns to identify error states:
+
+1. **Topic state reset:**
+   ```
+   After topic selection:
+   - Topic in store: 
+   - Selected Topic state: null
+   - User Topic state: 
+   ```
+   *Problem*: Topic state was reset, possibly due to a setTimeout or state conflict.
+
+2. **API connection failure:**
+   ```
+   Error: Failed to fetch
+   ```
+   *Problem*: Network issue or server down. Check API endpoint availability.
+
+3. **Expert generation failure:**
+   ```
+   Error selecting experts: Error: No response from OpenAI
+   ```
+   *Problem*: OpenAI API issue or missing API key.
+
+4. **Perplexity API issues:**
+   ```
+   PERPLEXITY_API_KEY environment variable is not set
+   ```
+   or
+   ```
+   Rate limit exceeded with Perplexity API
+   ```
+   *Problem*: Missing API configuration or rate limit reached.
+
+5. **URL validation failures:**
+   ```
+   [validateUrl] Skipping obviously fake URL: https://example.com/resource
+   [validateUrl] URL https://broken-link.com validation failed: FetchError: request to https://broken-link.com failed
+   [validateReadingUrls] Removed invalid URLs: ["https://example.com/fake", "https://broken-link.com"]
+   ```
+   *Problem*: URLs provided by Perplexity API are not accessible or are placeholder URLs.
+
+6. **Firebase permission errors:**
+   ```
+   FirebaseError: Missing or insufficient permissions
+   ```
+   *Problem*: Database rules preventing read/write operations.
+
+7. **Firebase connection issues:**
+   ```
+   FirebaseError: [FIREBASE_APP_NAME] has already been deleted
+   ```
+   or
+   ```
+   FirebaseError: Network error (such as timeout or interrupted connection)
+   ```
+   *Problem*: App initialization issue or network connectivity problem.
+
+8. **CORS/Method Not Allowed Errors:**
+   ```
+   POST https://[domain]/api/content/document 405 (Method Not Allowed)
+   [ContentUploader] API responded with error status: 405
+   [ContentUploader] Error details: Server returned an empty response
+   ```
+   *Problem*: Cross-Origin Resource Sharing (CORS) restrictions or server configuration issues.
+
+## Debugging Steps
+
+### 1. Topic Selection Issues
+
+If topics aren't being saved or processed correctly:
+
+1. Check the `DebatePanel.tsx` logs for the topic selection flow
+2. Verify that `handleTopicSelect` is being called with the correct topic
+3. Ensure no `setTimeout` is clearing the topic state
+4. Confirm that `initializeDebateWithTopic` receives the topic correctly
+5. Look for state conflicts in the `useEffect` dependencies
+
+### 2. Expert Generation Issues
+
+If experts aren't being generated or are showing incorrect stances:
+
+1. Check `src/lib/ai/expert-selector.ts` logs for API response
+2. Verify OpenAI API key is valid and has sufficient quota
+3. Inspect the actual JSON response from OpenAI in logs
+4. Confirm that the system prompt in `getUserPrompt` is correctly formatting pro/con stance instructions
+5. Verify that experts with opposing stances (one pro, one con) are correctly identified in the response
+
+### 3. Message Generation Issues
+
+If expert messages aren't displaying the correct tone or stance:
+
+1. Look for logs from `generateDebateResponseServer` in the console
+2. Check that the system prompt correctly identifies the expert's stance
+3. Verify that pro/con instructions are being properly applied
+4. Confirm OpenAI model selection and parameters
+
+### 4. Reading Recommendations Issues
+
+If reading recommendations aren't appearing or URLs are broken:
+
+1. **Check Perplexity API Configuration:**
+   - Look for `PERPLEXITY_API_KEY` configuration errors
+   - Verify API key format and validity
+   - Check for timeout or rate limit errors in the API response
+   - Verify API URL and model name for Perplexity
+
+2. **URL Validation Debugging:**
+   - Look for `[validateUrl]` logs to see which URLs are being checked
+   - Check for `[validateReadingUrls]` completion logs showing valid/invalid counts
+   - Identify patterns in failed URLs (all from same domain, similar errors)
+   - Verify timeout settings are appropriate (currently 10 seconds per URL)
+
+3. **Reddit Community Integration:**
+   - Verify that Reddit URLs are in format `reddit.com/r/subredditname`
+   - Check that specific post URLs are not being generated
+   - Look for subreddit validation results in logs
+
+4. **Performance Debugging:**
+   - Monitor total time for URL validation (should be 5-15 seconds)
+   - Check for parallel processing vs sequential validation
+   - Look for excessive timeouts indicating network issues
+
+### 5. Document Upload Issues
+
+If document uploads are failing with 405 Method Not Allowed errors:
+
+1. **Check CORS Configuration:**
+   - Verify that `next.config.js` has proper headers configuration
+   - Make sure the API route includes OPTIONS handler for preflight requests
+   - Check Network tab in browser dev tools for CORS errors
+
+2. **API Route Configuration:**
+   - Ensure `route.ts` for `/api/content/document` exports both POST and OPTIONS handlers
+   - Check that the route properly sets CORS headers in all responses
+   - Verify content type handling for multipart/form-data
+
+3. **Environment/Production Issues:**
+   - Test in development environment to isolate the issue
+   - Check if the issue only occurs in production deployment
+   - Verify Vercel configuration if using Vercel hosting
+
+4. **Troubleshooting Steps:**
+   - Add explicit logging of Content-Type headers in API route
+   - Try using a smaller file for upload
+   - Check browser console for detailed error messages
+   - Try using `curl` or Postman to test the API endpoint directly
+
+5. **Common Solutions:**
+   - Update `next.config.js` to include CORS headers for API routes
+   - Add OPTIONS handler to API route
+   - Check middleware that might be interfering with API routes
+   - Update ContentUploader component to better handle CORS errors
+
+### 6. Firebase Data Issues
+
+If Firebase operations are failing or data isn't being saved/retrieved:
+
+1. **Check Authentication State:**
+   - Verify user is authenticated before any Firebase operation
+   - Look for auth state changes in the console logs
+   - Check for expired tokens or sessions
+
+2. **Database Operation Errors:**
+   - Examine Firestore read/write operations in the console
+   - Look for permission denied errors indicating security rule issues
+   - Check for invalid document paths or missing collections
+
+3. **Performance Bottlenecks:**
+   - Look for multiple repetitive reads of the same data
+   - Check for unnecessary listeners that aren't being unsubscribed
+   - Identify large document reads that could be optimized
+
+4. **Common Firebase Debugging Techniques:**
+   - Add `.catch(error => console.error("Firebase error:", error))` to all Firebase promises
+   - Check Firebase console for errors in the "Logs" section
+   - Verify security rules in Firebase console match your expectations
+   - Use Firebase Emulator for local debugging of complex issues
+
+## URL Validation Specific Debugging
+
+### Identifying URL Validation Issues
+
+1. **All URLs Invalid:**
+   ```
+   [validateReadingUrls] Validation complete. Valid: 0, Invalid: 5
+   [getExpertRecommendedReading] No valid URLs found for topic: "AI Ethics". All 5 URLs were invalid.
+   ```
+   **Causes:**
+   - Perplexity API returning fake URLs (example.com)
+   - Network connectivity issues
+   - Overly strict validation criteria
+   - DNS resolution problems
+
+2. **Partial URL Validation Failure:**
+   ```
+   [validateReadingUrls] Validation complete. Valid: 2, Invalid: 3
+   [getExpertRecommendedReading] Many invalid URLs found for topic: "Climate Change". Valid: 2/5
+   ```
+   **Causes:**
+   - Mix of real and fake URLs from Perplexity
+   - Some sites blocking HEAD requests
+   - Temporary server outages
+
+3. **URL Validation Timeout:**
+   ```
+   [validateUrl] URL https://slow-site.com validation failed: AbortError: signal is aborted without reason
+   ```
+   **Causes:**
+   - Sites with slow response times
+   - Network latency issues
+   - 10-second timeout too short for some sites
+
+### URL Validation Performance Debugging
+
+1. **Monitor Validation Time:**
+   - Check total time from `[validateReadingUrls] Starting` to `Validation complete`
+   - Should typically be 10-15 seconds for 5 URLs (parallel processing)
+   - If much longer, check for sequential processing bugs
+
+2. **Check Parallel Processing:**
+   - Multiple `[validateUrl] Checking URL:` logs should appear simultaneously
+   - If appearing sequentially, parallel processing may be broken
+
+3. **Network Issues:**
+   - Look for consistent failures across different domains
+   - Check for DNS resolution errors
+   - Verify internet connectivity
+
+### Reddit Community Integration Debugging
+
+1. **Verify Reddit URL Format:**
+   - Should see URLs like `reddit.com/r/psychology` not `reddit.com/r/psychology/comments/...`
+   - Check Perplexity prompt is correctly requesting subreddit URLs
+
+2. **Reddit Validation:**
+   - Reddit subreddit URLs should consistently validate as VALID
+   - If Reddit URLs are failing validation, check for DNS or connectivity issues
+
+## Firebase Performance Optimization
+
+### Identifying Firebase Bottlenecks
+
+1. **Enable Performance Logging:**
+   Add the following code to debug Firebase operations:
+   ```javascript
+   // Add at the top of files that make Firebase calls
+   const DEBUG_FIREBASE = true;
+   
+   // Then use this pattern for operations
+   if (DEBUG_FIREBASE) console.time('firebase-operation-name');
+   const result = await firestore.collection('debates').doc(id).get();
+   if (DEBUG_FIREBASE) console.timeEnd('firebase-operation-name');
+   ```
+
+2. **Common Firebase Performance Issues:**
+
+   - **Excessive Reads**: Multiple components reading the same data
+   - **Deep Document Nesting**: Reading large nested collections
+   - **Missing Indices**: Queries without proper indices
+   - **Inefficient Listeners**: Too many real-time listeners
+   - **Large Document Sizes**: Documents exceeding optimal size
+   - **Missing Cache Controls**: Not utilizing Firestore cache effectively
+
+### Optimizing Firebase Reads
+
+1. **State Management Patterns:**
+   
+   - **Centralize Firebase Data Access:**
+     ```javascript
+     // Bad pattern (scattered across components)
+     useEffect(() => {
+       firestore.collection('debates').doc(id).get().then(/* ... */);
+     }, [id]);
+     
+     // Good pattern (centralized in a custom hook or context)
+     const debate = useDebate(id); // Custom hook handles caching and access
+     ```
+
+   - **Use Local Caching with Zustand:**
+     ```javascript
+     // Example store pattern for caching Firebase data
+     const useDebateStore = create((set, get) => ({
+       debates: {},
+       fetchDebate: async (id) => {
+         // Check cache first
+         if (get().debates[id]) return get().debates[id];
+         
+         // Fetch if not in cache
+         const doc = await firestore.collection('debates').doc(id).get();
+         const debate = doc.data();
+         
+         // Update cache
+         set(state => ({
+           debates: {
+             ...state.debates,
+             [id]: debate
+           }
+         }));
+         
+         return debate;
+       }
+     }));
+     ```
+
+2. **Optimization Techniques:**
+
+   - **Use Batch Gets** instead of individual document fetches:
+     ```javascript
+     // Instead of multiple individual gets
+     const [doc1, doc2, doc3] = await Promise.all([
+       firestore.doc('path/doc1').get(),
+       firestore.doc('path/doc2').get(),
+       firestore.doc('path/doc3').get()
+     ]);
+     ```
+
+   - **Implement Pagination** for large collections:
+     ```javascript
+     // Initial query
+     let query = firestore.collection('messages')
+       .orderBy('timestamp')
+       .limit(10);
+     
+     // Get next batch
+     const lastDoc = /* last document from previous batch */;
+     const nextBatch = query.startAfter(lastDoc).limit(10);
+     ```
+
+   - **Use Field Selection** to fetch only needed fields:
+     ```javascript
+     // Instead of getting entire documents
+     const doc = await firestore.doc('debates/123')
+       .select(['title', 'topic', 'experts'])
+       .get();
+     ```
+
+### Optimizing Firestore Listeners
+
+1. **Properly Unsubscribe** from listeners:
+   ```javascript
+   useEffect(() => {
+     // Set up listener
+     const unsubscribe = firestore.collection('messages')
+       .where('debateId', '==', debateId)
+       .onSnapshot(snapshot => {
+         // Handle updates
+       });
+     
+     // Clean up on unmount or dependency change
+     return () => unsubscribe();
+   }, [debateId]);
+   ```
+
+2. **Limit Real-time Updates** to essential collections:
+   ```javascript
+   // For static data, use get() instead of onSnapshot
+   const debateRef = firestore.doc(`debates/${debateId}`);
+   
+   // One-time get for static data
+   const debateDoc = await debateRef.get();
+   
+   // Real-time updates only for messages
+   const messagesUnsubscribe = firestore.collection('messages')
+     .where('debateId', '==', debateId)
+     .onSnapshot(/* ... */);
+   ```
+
+### Structuring Data for Performance
+
+1. **Denormalize Critical Data** to reduce fetch operations:
+   ```javascript
+   // Instead of fetching users for each message
+   // Store essential user data in the message document
+   const messageWithUser = {
+     text: 'Message content',
+     timestamp: serverTimestamp(),
+     user: {
+       id: userId,
+       name: userName,
+       avatar: userAvatar
+     }
+   };
+   ```
+
+2. **Use Composite Keys** for common queries:
+   ```javascript
+   // Add fields to optimize common queries
+   const message = {
+     debateId: 'debate-123',
+     expertId: 'expert-456',
+     // Create composite key for common filters
+     debateExpert: 'debate-123_expert-456'
+   };
+   
+   // Then query efficiently
+   const messages = firestore.collection('messages')
+     .where('debateExpert', '==', `${debateId}_${expertId}`)
+     .get();
+   ```
+
+## CORS Issues and Solutions
+
+CORS (Cross-Origin Resource Sharing) issues can be particularly challenging to debug. Here are specific solutions for common CORS problems:
+
+### Identifying CORS Issues
+
+Look for these patterns in console errors:
+- `Access to fetch at '[URL]' from origin '[ORIGIN]' has been blocked by CORS policy`
+- `Response for preflight has invalid HTTP status code 405`
+- `Request header field [HEADER] is not allowed by Access-Control-Allow-Headers`
+
+### Common CORS Solutions
+
+1. **Next.js Configuration:**
+   - Update `next.config.js` with proper headers configuration:
+     ```javascript
+     async headers() {
+       return [
+         {
+           source: '/api/:path*',
+           headers: [
+             { key: 'Access-Control-Allow-Origin', value: '*' },
+             { key: 'Access-Control-Allow-Methods', value: 'GET,POST,PUT,DELETE,OPTIONS' },
+             { key: 'Access-Control-Allow-Headers', value: 'Content-Type' },
+           ],
+         },
+       ]
+     }
+     ```
+
+2. **API Route Handler:**
+   - Implement OPTIONS handler in route.ts files:
+     ```typescript
+     export async function OPTIONS(request: NextRequest) {
+       return new NextResponse(null, {
+         status: 200,
+         headers: {
+           'Access-Control-Allow-Origin': '*',
+           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+           'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+         },
+       });
+     }
+     ```
+
+3. **FormData Handling:**
+   - Don't manually set Content-Type for FormData uploads:
+     ```javascript
+     // INCORRECT - browser can't set proper multipart boundary
+     fetch('/api/upload', {
+       method: 'POST',
+       headers: { 'Content-Type': 'multipart/form-data' }, // REMOVE THIS!
+       body: formData
+     });
+     
+     // CORRECT - let browser set Content-Type with boundary
+     fetch('/api/upload', {
+       method: 'POST',
+       body: formData
+     });
+     ```
+
+4. **Testing CORS Configuration:**
+   - Use curl to test API endpoints directly:
+     ```bash
+     # Test OPTIONS request (preflight)
+     curl -X OPTIONS -H "Origin: http://localhost:3000" \
+       -H "Access-Control-Request-Method: POST" \
+       -v https://your-domain.com/api/content/document
+     
+     # Should see Access-Control-Allow-* headers in response
+     ```
+
+## Vercel API Mock Notice
+
+The following log is normal in development and does not indicate an error:
+```
+Using mock Vercel API data. Set NEXT_PUBLIC_VERCEL_TOKEN to use real API.
+```
+
+## Common Error Solutions
+
+1. **Topic State Reset**: Ensure no setTimeout in handleTopicSelect and check for state conflicts in useEffect dependencies.
+
+2. **API Connection Errors**: Verify network connectivity and API endpoints availability.
+
+3. **OpenAI Errors**: Check API key validity, quota, and response format.
+
+4. **Perplexity API Issues**: Verify API key configuration and model names.
+
+5. **URL Validation Issues**:
+   - **All URLs Invalid**: Check Perplexity prompts, network connectivity, and validation criteria
+   - **Fake URLs**: Update Perplexity prompts to emphasize real URLs
+   - **Timeouts**: Adjust validation timeout or check network performance
+
+6. **Firebase Data Issues**: 
+   - **Missing Permissions**: Review security rules in Firebase console
+   - **Document Not Found**: Verify document paths and IDs
+   - **Already Exists**: Check for duplicate writes or race conditions
+   - **Quota Exceeded**: Check Firebase usage in console
+   - **App Deleted**: Ensure Firebase is properly initialized before use
+
+7. **React Rendering Loops**: Check for state updates in useEffect that might trigger infinite loops.
+
+8. **CORS/Method Not Allowed (405) Errors**:
+   - **Headers Configuration**: Update Next.js config to set proper CORS headers
+   - **OPTIONS Handler**: Add OPTIONS handler to API routes
+   - **Content-Type**: Don't manually set Content-Type for FormData
+   - **Deployment Config**: Verify Vercel configuration for API routes
+
+## Debugging Environment Variables
+
+To verify environment variables are correctly set:
+- Check `.env.local` file
+- Confirm variables are prefixed with `NEXT_PUBLIC_` if needed on client-side
+- Restart the development server after changing environment variables
+
+## Firebase-Specific Debugging Tools
+
+1. **Firebase Console**:
+   - Check Firestore database for document structure and content
+   - Review Authentication section for user status
+   - Examine Logs for backend errors
+
+2. **Firebase Emulator**:
+   - Run `firebase emulators:start` for local testing
+   - Provides local Firestore, Auth, and Functions
+   - Allows testing without affecting production data
+
+3. **Redux DevTools** (if using Redux with Firebase):
+   - Monitor state changes related to Firebase data
+   - Track action dispatches for Firebase operations
+
+4. **Firebase Performance Monitoring**:
+   - Add `import 'firebase/performance'` to track performance
+   - View trace data in Firebase console
+

@@ -149,44 +149,9 @@ export async function POST(request: NextRequest) {
                 return handleInitializeDebate(body);
             case 'generate-response':
                 try {
-                    // Check if we should use real API - prioritize NEXT_PUBLIC_USE_REAL_API env var
-                    const useRealApi = process.env.NEXT_PUBLIC_USE_REAL_API === 'true';
-                    const useMockData = process.env.USE_MOCK_DATA === 'true';
-
-                    // Use real API when explicitly requested or when not explicitly mocked
-                    if (useRealApi || (!useMockData && process.env.NODE_ENV !== 'development')) {
-                        console.log('Generating real response with OpenAI (forced real mode)');
-                        const { expert, topic, messages } = body;
-
-                        if (!expert || !topic || !messages) {
-                            return NextResponse.json(
-                                { error: 'Missing required fields: expert, topic, messages' },
-                                { status: 400 }
-                            );
-                        }
-
-                        const result = await generateResponseSafe(expert, topic, messages);
-                        console.log('Response generated successfully');
-
-                        return NextResponse.json(result);
-                    }
-
-                    // Fall back to mock response only if explicitly configured
-                    if (useMockData) {
-                        console.log('Using mock response as configured');
-                        return NextResponse.json({
-                            response: "This is a mock response because USE_MOCK_DATA=true. Set NEXT_PUBLIC_USE_REAL_API=true to force real API usage.",
-                            usage: {
-                                promptTokens: 100,
-                                completionTokens: 50,
-                                totalTokens: 150,
-                                cost: 0.002
-                            }
-                        });
-                    }
-
-                    // Default to real API
-                    console.log('Generating real response with OpenAI (default behavior)');
+                    // Removed checks for NEXT_PUBLIC_USE_REAL_API and USE_MOCK_DATA
+                    // Always attempt to generate a real response
+                    console.log('Generating real response with OpenAI');
                     const { expert, topic, messages } = body;
 
                     if (!expert || !topic || !messages) {

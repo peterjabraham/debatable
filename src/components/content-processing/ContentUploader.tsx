@@ -1,694 +1,623 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useDebateStore } from '@/lib/store';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useNotification } from '@/components/ui/notification';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useToast } from '@/components/ui/use-toast';
+import { useDebateStore } from '@/lib/store';
+import { ContentProcessingResponse, ContentProcessingError, DebateTopic } from '@/types/content';
 import {
-    Loader2,
     FileText,
     Youtube,
-    Mic,
-    Link as LinkIcon,
+    Headphones,
+    Upload,
+    CheckCircle,
+    AlertCircle,
     ChevronDown,
     ChevronUp,
-    Check,
-    Upload
+    Sparkles
 } from 'lucide-react';
 
-interface Topic {
-    title: string;
-    confidence: number;
-    arguments: {
-        claim: string;
-        evidence: string;
-        counterpoints?: string[];
-    }[];
+interface ContentUploaderProps {
+    fileStatus: {
+        message: string;
+        className: string;
+    };
 }
 
-export function ContentUploader() {
+interface ProcessingState {
+    isProcessing: boolean;
+    currentStep: string;
+    error: string | null;
+    contentId: string | null;
+    extractedTopics: DebateTopic[];
+    selectedTopicIndex: number | null;
+    isExpanded: boolean;
+}
+
+export function ContentUploader({ fileStatus }: ContentUploaderProps) {
     const [activeTab, setActiveTab] = useState('document');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [processingProgress, setProcessingProgress] = useState<string | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const [url, setUrl] = useState('');
-    const [extractedTopics, setExtractedTopics] = useState<Topic[]>([]);
-    const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
-    const [expanded, setExpanded] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [notificationId, setNotificationId] = useState<string | null>(null);
+    const [processing, setProcessing] = useState<ProcessingState>({
+        isProcessing: false,
+        currentStep: '',
+        error: null,
+        contentId: null,
+        extractedTopics: [],
+        selectedTopicIndex: null,
+        isExpanded: false
+    });
 
-    const { setTopic } = useDebateStore();
-    const { addNotification, updateNotification, removeNotification } = useNotification();
+    const { toast } = useToast();
+    const {
+        setTopic,
+        setTopicContext,
+        setAvailableTopics,
+        setProcessedContent
+    } = useDebateStore();
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = e.target.files?.[0] || null;
-        setFile(selectedFile);
-        setError(null);
+        const selectedFile = e.target.files?.[0];
+        setFile(selectedFile || null);
     };
 
     const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setUrl(e.target.value);
-        setError(null);
     };
 
     const handleTabChange = (value: string) => {
+        console.log(`[ContentUploader] Tab changed from ${activeTab} to ${value}`);
         setActiveTab(value);
+        // Reset form state when switching tabs
         setFile(null);
         setUrl('');
-        setError(null);
+        setProcessing(prev => ({
+            ...prev,
+            error: null,
+            extractedTopics: [],
+            selectedTopicIndex: null
+        }));
+        // Force a small delay to ensure state is updated
+        setTimeout(() => {
+            console.log(`[ContentUploader] Tab change complete, activeTab is now: ${value}`);
+        }, 100);
     };
 
-    const handleProcessContent = async () => {
-        setIsProcessing(true);
-        setError(null);
-        // Reset extracted topics to ensure we don't show old data
-        setExtractedTopics([]);
-
-        console.log(`[ContentUploader] Starting content processing for tab: ${activeTab}`);
-
-        // Create initial notification
-        const id = addNotification({
-            status: 'loading',
-            title: 'Processing Content',
-            message: 'Starting content processing...',
-            duration: 0, // Persistent until complete
+    const validateContentInput = (currentTab: string): string | null => {
+        console.log(`[ContentUploader] Validating input for tab: ${currentTab}`);
+        console.log(`[ContentUploader] Current state:`, {
+            currentTab,
+            activeTab,
+            hasFile: !!file,
+            fileName: file?.name,
+            hasUrl: !!url?.trim(),
+            url: url?.substring(0, 50)
         });
-        setNotificationId(id);
+
+        if (currentTab === 'document') {
+            if (!file) return 'Please select a PDF file to upload.';
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                return 'Please select a valid PDF file.';
+            }
+            if (file.size > 50 * 1024 * 1024) {
+                return 'File size must be less than 50MB.';
+            }
+        } else if (currentTab === 'youtube') {
+            if (!url.trim()) return 'Please enter a YouTube URL.';
+            const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            if (!youtubeRegex.test(url)) {
+                return 'Please enter a valid YouTube URL.';
+            }
+        } else if (currentTab === 'podcast') {
+            if (!url.trim()) return 'Please enter a podcast RSS feed URL.';
+            try {
+                new URL(url);
+            } catch {
+                return 'Please enter a valid URL.';
+            }
+        }
+
+        console.log(`[ContentUploader] Validation passed for ${currentTab}`);
+        return null;
+    };
+
+    const handleContentProcessing = async () => {
+        // Capture the current tab at the time of processing
+        const currentTab = activeTab;
+        console.log(`[ContentUploader] PROCESSING STARTED - activeTab: ${activeTab}, currentTab: ${currentTab}`);
+        console.log(`[ContentUploader] Current form state:`, {
+            file: file?.name || 'none',
+            url: url || 'none',
+            activeTab,
+            currentTab
+        });
+
+        const validationError = validateContentInput(currentTab);
+        if (validationError) {
+            console.error(`[ContentUploader] Validation failed for tab ${currentTab}:`, validationError);
+            toast({
+                title: 'Validation Error',
+                description: validationError,
+                variant: 'destructive',
+            });
+            return;
+        }
+
+        setProcessing(prev => ({
+            ...prev,
+            isProcessing: true,
+            currentStep: 'Preparing content...',
+            error: null,
+            extractedTopics: [],
+            selectedTopicIndex: null
+        }));
 
         try {
-            let endpoint = '';
             const formData = new FormData();
 
-            switch (activeTab) {
-                case 'document':
-                    if (!file) {
-                        throw new Error('Please select a file to upload');
-                    }
-                    updateNotification(id, {
-                        message: 'Uploading document...',
-                    });
-                    console.log(`[ContentUploader] Uploading document: ${file.name}`);
-                    endpoint = '/api/content/document';
-                    formData.append('file', file);
-                    break;
+            // Ensure we're using the correct source type based on current tab
+            const sourceType = currentTab === 'document' ? 'pdf' : currentTab;
+            formData.append('sourceType', sourceType);
 
-                case 'youtube':
-                    if (!url) {
-                        throw new Error('Please enter a valid YouTube URL');
-                    }
-                    updateNotification(id, {
-                        message: 'Fetching YouTube video...',
-                    });
-                    console.log(`[ContentUploader] Processing YouTube URL: ${url}`);
-                    endpoint = '/api/content/media';
-                    formData.append('url', url);
-                    formData.append('type', activeTab);
-                    break;
+            console.log(`[ContentUploader] Using sourceType: ${sourceType} for tab: ${currentTab}`);
 
-                case 'podcast':
-                    if (!url) {
-                        throw new Error('Please enter a valid podcast URL');
-                    }
-                    updateNotification(id, {
-                        message: 'Fetching podcast audio...',
-                    });
-                    console.log(`[ContentUploader] Processing podcast URL: ${url}`);
-                    endpoint = '/api/content/media';
-                    formData.append('url', url);
-                    formData.append('type', activeTab);
-                    break;
-
-                case 'link':
-                    if (!url) {
-                        throw new Error('Please enter a valid URL');
-                    }
-                    updateNotification(id, {
-                        message: 'Fetching web content...',
-                    });
-                    console.log(`[ContentUploader] Processing web URL: ${url}`);
-                    endpoint = '/api/content/link';
-                    formData.append('url', url);
-                    break;
+            if (currentTab === 'document' && file) {
+                formData.append('file', file);
+                setProcessing(prev => ({ ...prev, currentStep: 'Uploading PDF...' }));
+            } else if ((currentTab === 'youtube' || currentTab === 'podcast') && url) {
+                formData.append('url', url);
+                setProcessing(prev => ({
+                    ...prev,
+                    currentStep: currentTab === 'youtube'
+                        ? 'Fetching YouTube transcript...'
+                        : 'Processing podcast audio...'
+                }));
+            } else {
+                throw new Error(`Invalid state: currentTab=${currentTab}, hasFile=${!!file}, hasUrl=${!!url}`);
             }
 
-            // For YouTube and podcast, warn about longer processing time
-            if (activeTab === 'youtube' || activeTab === 'podcast') {
-                updateNotification(id, {
-                    message: `Processing ${activeTab} content. This may take a few minutes...`,
-                });
-            }
+            console.log(`[ContentUploader] Processing ${sourceType} content`);
 
-            console.log(`[ContentUploader] Sending request to: ${endpoint}`);
-            const response = await fetch(endpoint, {
+            const response = await fetch('/api/content/process-source', {
                 method: 'POST',
                 body: formData,
             });
 
             if (!response.ok) {
-                console.error(`[ContentUploader] API responded with error status: ${response.status}`);
-                let errorMessage = `Server error (${response.status})`;
-
-                try {
-                    // Try to get the error message from the response, but handle empty responses
-                    const responseText = await response.text();
-                    console.log(`[ContentUploader] Error response text:`, responseText);
-
-                    // Only try to parse if we have actual content
-                    if (responseText && responseText.trim().length > 0) {
-                        const errorData = JSON.parse(responseText);
-                        errorMessage = errorData.message || errorData.error || errorMessage;
-                    } else {
-                        errorMessage = "Server returned an empty response";
-                    }
-                } catch (parseError) {
-                    console.error(`[ContentUploader] Could not parse error response:`, parseError);
-                    errorMessage = `Server error: ${response.statusText || response.status}`;
-                }
-
-                console.error(`[ContentUploader] Error details:`, errorMessage);
-                throw new Error(errorMessage);
+                const errorData: ContentProcessingError = await response.json();
+                throw new Error(errorData.details || errorData.error || 'Processing failed');
             }
 
-            console.log(`[ContentUploader] Received successful response from API`);
-            // Get response body as text first for debugging
-            let responseText;
-            try {
-                responseText = await response.text();
-                console.log(`[ContentUploader] Raw response:`, responseText);
+            setProcessing(prev => ({ ...prev, currentStep: 'Extracting debate topics...' }));
 
-                // Check if the response is empty
-                if (!responseText || responseText.trim().length === 0) {
-                    throw new Error("Server returned an empty response");
-                }
-            } catch (textError) {
-                console.error(`[ContentUploader] Error reading response text:`, textError);
-                throw new Error(`Failed to read server response: ${textError.message}`);
-            }
+            const result: ContentProcessingResponse = await response.json();
 
-            // Parse the response text into JSON
-            let data;
-            try {
-                data = JSON.parse(responseText);
-                console.log(`[ContentUploader] Parsed response data:`, data);
-            } catch (parseError) {
-                console.error(`[ContentUploader] Error parsing JSON response:`, parseError);
-                setError(`Invalid response format from server: ${parseError.message}. Please try again or contact support.`);
+            console.log('[ContentUploader] Processing completed:', result);
 
-                // Update notification to error
-                updateNotification(id, {
-                    status: 'error',
-                    title: 'Processing Failed',
-                    message: 'Server returned an invalid response format',
-                    duration: 5000, // Auto-dismiss after 5 seconds
-                });
-                return; // Exit early after showing error
-            }
+            // Update the store with processed content
+            const contentContext = {
+                title: result.debateTopics[0]?.title || 'Unknown Topic',
+                description: result.debateTopics[0]?.summary,
+                contentId: result.contentId,
+                sourceType: sourceType as 'pdf' | 'youtube' | 'podcast',
+                confidence: result.debateTopics[0]?.confidence
+            };
 
-            // Check if data is valid and has topics
-            if (data && data.topics && Array.isArray(data.topics) && data.topics.length > 0) {
-                console.log(`[ContentUploader] Extracted ${data.topics.length} topics from content`);
-                console.log(`[ContentUploader] Response is from mock API: ${!!data.mock}`);
+            setAvailableTopics(result.debateTopics);
 
-                // Log first topic for debugging
-                if (data.topics.length > 0) {
-                    console.log(`[ContentUploader] First topic:`, data.topics[0]);
+            setProcessing(prev => ({
+                ...prev,
+                isProcessing: false,
+                currentStep: '',
+                contentId: result.contentId,
+                extractedTopics: result.debateTopics,
+                isExpanded: true
+            }));
 
-                    // Log further details about the topic to help diagnose the issue
-                    console.log(`[ContentUploader] Topic title: "${data.topics[0].title}"`);
-                    console.log(`[ContentUploader] Topic confidence: ${data.topics[0].confidence}`);
-                    console.log(`[ContentUploader] Number of arguments: ${data.topics[0].arguments?.length || 0}`);
-
-                    // Check for both 'arguments' and 'args' properties to handle backend format variations
-                    const hasArguments = !!data.topics[0].arguments;
-                    const hasArgs = !!data.topics[0].args;
-
-                    console.log(`[ContentUploader] First topic has arguments: ${hasArguments}, args: ${hasArgs}`);
-
-                    // If the topic has 'args' but not 'arguments', convert the format
-                    if (!hasArguments && hasArgs) {
-                        console.log(`[ContentUploader] Converting 'args' to 'arguments' format`);
-                        data.topics = data.topics.map(topic => ({
-                            ...topic,
-                            arguments: topic.args
-                        }));
-                    }
-
-                    console.log(`[ContentUploader] First topic arguments count: ${data.topics[0].arguments?.length || 0}`);
-                }
-
-                // Set the extracted topics in state
-                setExtractedTopics(data.topics);
-
-                // Update notification to success
-                updateNotification(id, {
-                    status: 'success',
-                    title: 'Processing Complete',
-                    message: `Successfully extracted ${data.topics.length} topics from content.`,
-                    duration: 5000, // Auto-dismiss after 5 seconds
-                });
-            } else {
-                console.error(`[ContentUploader] No topics found in response or topics is not an array:`,
-                    data === null ? 'null' :
-                        data === undefined ? 'undefined' :
-                            Object.keys(data).length === 0 ? 'empty object {}' :
-                                JSON.stringify(data)
-                );
-
-                // Try to print out some diagnostics about what we received
-                console.log(`[ContentUploader] Response type: ${typeof data}, keys: ${data ? Object.keys(data).join(', ') : 'none'}`);
-
-                // Check for mock API response first
-                if (data && data.mock === true) {
-                    console.log(`[ContentUploader] Detected mock API response due to server unavailability`);
-
-                    // Load sample topics but with a clear notification about server being unavailable
-                    handleLoadSampleTopics();
-
-                    // Show an informative error message
-                    setError(`API server is currently unavailable. Using demo topics instead. Please try again later.`);
-
-                    // Update notification
-                    updateNotification(id, {
-                        status: 'warning',
-                        title: 'Server Unavailable',
-                        message: 'Using demo topics because the API server is unavailable',
-                        duration: 8000, // Show longer
-                    });
-
-                    return;
-                }
-
-                // Check for error message in the response
-                let errorMsg = '';
-                if (data && typeof data.error === 'string') {
-                    errorMsg = data.error;
-                } else if (data && typeof data.message === 'string' && data.message.toLowerCase().includes('error')) {
-                    errorMsg = data.message;
-                } else {
-                    errorMsg = 'No topics could be extracted from the content. Please try different content or check if the file format is supported.';
-                }
-
-                setError(errorMsg);
-
-                // Update notification to error
-                updateNotification(id, {
-                    status: 'error',
-                    title: 'No Topics Found',
-                    message: errorMsg,
-                    duration: 5000, // Auto-dismiss after 5 seconds
-                });
-            }
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-            console.error(`[ContentUploader] Error processing content:`, err);
-            setError(errorMessage);
-
-            // Create a more user-friendly error message for the notification
-            let notificationMessage = errorMessage;
-            if (errorMessage.includes('corrupted') || errorMessage.includes('invalid')) {
-                notificationMessage = 'The document appears to be corrupted or invalid';
-            } else if (errorMessage.includes('empty')) {
-                notificationMessage = 'Document contains no extractable text';
-            } else if (errorMessage.includes('timed out')) {
-                notificationMessage = 'Processing timed out - file may be too large';
-            } else if (errorMessage.includes('Server')) {
-                notificationMessage = 'Server error - please try again later';
-            }
-
-            // Update notification to error
-            updateNotification(id, {
-                status: 'error',
-                title: 'Processing Failed',
-                message: notificationMessage,
-                duration: 5000, // Auto-dismiss after 5 seconds
+            toast({
+                title: 'Content Processed Successfully',
+                description: `Found ${result.debateTopics.length} debate topics. Select one to start debating!`,
             });
-        } finally {
-            setIsProcessing(false);
-            setProcessingProgress(null);
-            // Clear notification ID
-            setNotificationId(null);
 
-            // Log the current state to verify if topics were set
-            console.log(`[ContentUploader] Final state: ${extractedTopics.length} topics`);
+        } catch (error: any) {
+            console.error('[ContentUploader] Processing error:', error);
+
+            setProcessing(prev => ({
+                ...prev,
+                isProcessing: false,
+                currentStep: '',
+                error: error.message
+            }));
+
+            toast({
+                title: 'Processing Failed',
+                description: error.message,
+                variant: 'destructive',
+            });
         }
     };
 
     const handleSelectTopic = (index: number) => {
-        setSelectedTopic(index);
+        const topic = processing.extractedTopics[index];
+        if (!topic) return;
+
+        // Update the store with selected topic and context
+        const contentContext = {
+            title: topic.title,
+            description: topic.summary,
+            contentId: processing.contentId,
+            sourceType: activeTab === 'document' ? 'pdf' as const : activeTab as 'youtube' | 'podcast',
+            confidence: topic.confidence
+        };
+
+        setTopicContext(contentContext);
+        setProcessing(prev => ({ ...prev, selectedTopicIndex: index }));
+
+        toast({
+            title: 'Topic Selected',
+            description: `Ready to debate: "${topic.title}"`,
+        });
     };
 
     const handleStartDebate = () => {
-        if (selectedTopic !== null && extractedTopics[selectedTopic]) {
-            try {
-                const selectedTopicData = extractedTopics[selectedTopic];
-
-                // Ensure we have valid arguments array
-                const topicArguments = Array.isArray(selectedTopicData.arguments) ?
-                    selectedTopicData.arguments : [];
-
-                // Ensure arguments have valid structure
-                const safeArguments = topicArguments.map(arg => ({
-                    claim: arg.claim || 'Unnamed claim',
-                    evidence: arg.evidence || 'No evidence provided',
-                    counterpoints: arg.counterpoints || []
-                }));
-
-                // Pass the full topic information as JSON string to preserve arguments
-                setTopic(JSON.stringify({
-                    title: selectedTopicData.title || 'Untitled Topic',
-                    confidence: selectedTopicData.confidence || 0.7,
-                    arguments: safeArguments
-                }));
-
-                console.log('[ContentUploader] Starting debate with selected topic:', selectedTopicData.title);
-            } catch (err) {
-                console.error('[ContentUploader] Error starting debate:', err);
-                // Don't throw error, just log it
-            }
+        if (processing.selectedTopicIndex === null) {
+            toast({
+                title: 'No Topic Selected',
+                description: 'Please select a topic first.',
+                variant: 'destructive',
+            });
+            return;
         }
+
+        const selectedTopic = processing.extractedTopics[processing.selectedTopicIndex];
+
+        // Navigate to debate - this would typically be handled by your routing system
+        window.location.href = `/app/debate?topic=${encodeURIComponent(selectedTopic.title)}`;
+    };
+
+    const getStepIcon = () => {
+        if (processing.error) return <AlertCircle className="h-4 w-4 text-red-500" />;
+        if (processing.isProcessing) return <Spinner className="h-4 w-4" />;
+        if (processing.extractedTopics.length > 0) return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return null;
     };
 
     const handleToggleExpanded = () => {
-        setExpanded(!expanded);
+        setProcessing(prev => ({ ...prev, isExpanded: !prev.isExpanded }));
     };
 
     const handleLoadSampleTopics = () => {
-        // Add a sample notification
-        addNotification({
-            title: 'Demo Topics Loaded',
-            message: 'Using demonstration topics for testing purposes only',
-            status: 'info',
-            duration: 5000
-        });
-
-        // Clear any existing error when manually loading demo topics
-        setError(null);
-
-        // Set sample topics
-        setExtractedTopics([
+        const sampleTopics: DebateTopic[] = [
             {
-                title: 'Climate Change Solutions',
-                confidence: 0.92,
-                arguments: [
-                    {
-                        claim: 'Renewable energy transition',
-                        evidence: 'Shifting to renewable energy sources like solar and wind can significantly reduce carbon emissions.',
-                    },
-                    {
-                        claim: 'Carbon pricing mechanisms',
-                        evidence: 'Implementing carbon taxes or cap-and-trade systems can incentivize emission reductions.',
-                    },
-                    {
-                        claim: 'Forest conservation',
-                        evidence: 'Protecting and restoring forests helps absorb CO2 from the atmosphere.',
-                    }
-                ]
+                title: "AI Impact on Job Market",
+                summary: "Exploring whether artificial intelligence will create more jobs than it eliminates, and how society should prepare for workforce transformation.",
+                confidence: 0.9
             },
             {
-                title: 'Artificial Intelligence Regulation',
-                confidence: 0.87,
-                arguments: [
-                    {
-                        claim: 'Ethics guidelines for AI',
-                        evidence: 'Establishing clear ethical guidelines for AI development ensures responsible innovation.',
-                    },
-                    {
-                        claim: 'Regulatory frameworks',
-                        evidence: 'Government oversight can prevent misuse of AI technologies.',
-                    },
-                    {
-                        claim: 'Transparency requirements',
-                        evidence: 'Requiring explainability in AI systems helps build trust and accountability.',
-                    }
-                ]
+                title: "Universal Basic Income Effectiveness",
+                summary: "Debating the potential benefits and drawbacks of implementing UBI as a solution to technological unemployment and economic inequality.",
+                confidence: 0.85
+            },
+            {
+                title: "Climate Change Policy Priorities",
+                summary: "Examining different approaches to climate action: carbon pricing, green technology investment, or regulatory mandates.",
+                confidence: 0.88
             }
-        ]);
+        ];
+
+        setProcessing(prev => ({
+            ...prev,
+            extractedTopics: sampleTopics,
+            isExpanded: true,
+            contentId: 'sample-content'
+        }));
+
+        setAvailableTopics(sampleTopics);
+
+        toast({
+            title: 'Sample Topics Loaded',
+            description: 'Try out the debate system with these sample topics!',
+        });
     };
 
     return (
-        <div className="rounded-lg border bg-card shadow-sm">
-            <div className="flex flex-col p-4">
-                <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold">Content Analyzer</h3>
-                    <Button variant="ghost" size="sm" onClick={handleToggleExpanded} className="h-8 w-8 p-0">
-                        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </Button>
-                </div>
+        <div className="w-full max-w-4xl mx-auto space-y-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-blue-500" />
+                        Content Processing & Debate Topics
+                    </CardTitle>
+                    <CardDescription>
+                        Upload a PDF, share a YouTube video, or add a podcast to automatically generate debate topics
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {/* Custom Tab Implementation */}
+                    <div className="w-full">
+                        {/* Tab Headers */}
+                        <div className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground w-full">
+                            <button
+                                className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex-1 ${activeTab === 'document'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'hover:bg-background/50'
+                                    }`}
+                                onClick={() => handleTabChange('document')}
+                            >
+                                <FileText className="h-4 w-4 mr-2" />
+                                Document
+                            </button>
+                            <button
+                                className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex-1 ${activeTab === 'youtube'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'hover:bg-background/50'
+                                    }`}
+                                onClick={() => handleTabChange('youtube')}
+                            >
+                                <Youtube className="h-4 w-4 mr-2" />
+                                YouTube
+                            </button>
+                            <button
+                                className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex-1 ${activeTab === 'podcast'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'hover:bg-background/50'
+                                    }`}
+                                onClick={() => handleTabChange('podcast')}
+                            >
+                                <Headphones className="h-4 w-4 mr-2" />
+                                Podcast
+                            </button>
+                        </div>
 
-                {expanded && (
-                    <p className="text-sm text-muted-foreground mb-4">
-                        Upload content to extract debate topics or enter a topic directly to start a debate between AI experts
-                        and yourself.
-                    </p>
-                )}
-
-                {expanded && (
-                    <Tabs defaultValue="document" onValueChange={handleTabChange} className="w-full">
-                        <TabsList className="grid grid-cols-4 mb-4">
-                            <TabsTrigger value="document" className="flex items-center gap-2">
-                                <FileText className="h-4 w-4" />
-                                <span>Document</span>
-                            </TabsTrigger>
-                            <TabsTrigger value="youtube" className="flex items-center gap-2">
-                                <Youtube className="h-4 w-4" />
-                                <span>YouTube</span>
-                            </TabsTrigger>
-                            <TabsTrigger value="podcast" className="flex items-center gap-2">
-                                <Mic className="h-4 w-4" />
-                                <span>Podcast</span>
-                            </TabsTrigger>
-                            <TabsTrigger value="link" className="flex items-center gap-2">
-                                <LinkIcon className="h-4 w-4" />
-                                <span>Web Link</span>
-                            </TabsTrigger>
-                        </TabsList>
-
-                        <TabsContent value="document" className="space-y-4">
-                            <div className="text-sm">Upload Document (PDF, DOCX, TXT)</div>
-                            <div className="border border-dashed rounded-md p-8 text-center flex flex-col items-center justify-center">
-                                <Input
-                                    type="file"
-                                    id="document-upload"
-                                    onChange={handleFileChange}
-                                    accept=".pdf,.docx,.txt"
-                                    className="hidden"
-                                />
-                                <label
-                                    htmlFor="document-upload"
-                                    className="cursor-pointer flex flex-col items-center justify-center gap-2"
-                                >
-                                    <Upload className="h-8 w-8 text-muted-foreground" />
-                                    <div className="font-medium">Click to upload</div>
-                                    <div className="text-xs text-muted-foreground">
-                                        or drag and drop
+                        {/* Tab Content */}
+                        <div className="mt-6">
+                            {activeTab === 'document' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Upload PDF Document</label>
+                                        <div className="flex items-center gap-2">
+                                            <Input
+                                                type="file"
+                                                accept=".pdf"
+                                                onChange={handleFileChange}
+                                                className="flex-1"
+                                            />
+                                            {file && (
+                                                <Badge variant="secondary" className="flex items-center gap-1">
+                                                    <FileText className="h-3 w-3" />
+                                                    {file.name}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-gray-500">
+                                            Supports PDF files up to 50MB. Text will be extracted automatically.
+                                        </p>
                                     </div>
-                                    <div className="text-xs text-muted-foreground">
-                                        PDF, DOCX, TXT (MAX. 20MB)
+
+                                    <div className="flex items-center gap-2 pt-2">
+                                        <Button
+                                            onClick={handleContentProcessing}
+                                            disabled={processing.isProcessing || !file}
+                                            className="flex items-center gap-2"
+                                        >
+                                            {processing.isProcessing ? (
+                                                <Spinner className="h-4 w-4" />
+                                            ) : (
+                                                <Upload className="h-4 w-4" />
+                                            )}
+                                            {processing.isProcessing ? 'Processing PDF...' : 'Process PDF'}
+                                        </Button>
+
+                                        {processing.currentStep && activeTab === 'document' && (
+                                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                {getStepIcon()}
+                                                {processing.currentStep}
+                                            </div>
+                                        )}
                                     </div>
-                                </label>
-                                {file && (
-                                    <div className="mt-4 text-sm">
-                                        Selected file: {file.name}
-                                    </div>
-                                )}
-                            </div>
-                            <Button
-                                onClick={handleProcessContent}
-                                disabled={!file || isProcessing}
-                                className="w-full"
-                            >
-                                {isProcessing ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Processing...
-                                    </>
-                                ) : (
-                                    'Extract Topics'
-                                )}
-                            </Button>
-                        </TabsContent>
-
-                        <TabsContent value="youtube" className="space-y-4">
-                            <div className="text-sm">Enter YouTube URL</div>
-                            <Input
-                                type="url"
-                                value={url}
-                                onChange={handleUrlChange}
-                                placeholder="Enter YouTube URL (e.g. https://www.youtube.com/watch?v=...)"
-                                className="w-full"
-                            />
-                            <Button
-                                onClick={handleProcessContent}
-                                disabled={!url || isProcessing}
-                                className="w-full"
-                            >
-                                {isProcessing ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Processing...
-                                    </>
-                                ) : (
-                                    'Extract Topics'
-                                )}
-                            </Button>
-                            <p className="text-xs text-muted-foreground">
-                                Note: Processing YouTube videos may take several minutes.
-                            </p>
-                        </TabsContent>
-
-                        <TabsContent value="podcast" className="space-y-4">
-                            <div className="text-sm">Enter Podcast URL</div>
-                            <Input
-                                type="url"
-                                value={url}
-                                onChange={handleUrlChange}
-                                placeholder="Enter podcast URL (direct link to audio file)"
-                                className="w-full"
-                            />
-                            <Button
-                                onClick={handleProcessContent}
-                                disabled={!url || isProcessing}
-                                className="w-full"
-                            >
-                                {isProcessing ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Processing...
-                                    </>
-                                ) : (
-                                    'Extract Topics'
-                                )}
-                            </Button>
-                            <p className="text-xs text-muted-foreground">
-                                Note: Processing podcasts may take several minutes.
-                            </p>
-                        </TabsContent>
-
-                        <TabsContent value="link" className="space-y-4">
-                            <div className="text-sm">Enter Web URL</div>
-                            <Input
-                                type="url"
-                                value={url}
-                                onChange={handleUrlChange}
-                                placeholder="Enter web URL (e.g. https://example.com/article)"
-                                className="w-full"
-                            />
-                            <Button
-                                onClick={handleProcessContent}
-                                disabled={!url || isProcessing}
-                                className="w-full"
-                            >
-                                {isProcessing ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Processing...
-                                    </>
-                                ) : (
-                                    'Extract Topics'
-                                )}
-                            </Button>
-                        </TabsContent>
-                    </Tabs>
-                )}
-
-                {error && (
-                    <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-md text-sm">
-                        <p className="font-medium mb-1">Error</p>
-                        <p>{error}</p>
-                        <p className="mt-2 text-xs">
-                            {error.includes('corrupted') || error.includes('invalid') ? (
-                                <>Your PDF file might be corrupted. Try opening it first to verify it works, then re-upload.</>
-                            ) : error.includes('empty') ? (
-                                <>The document appears to be empty or contains no extractable text. Try a different document.</>
-                            ) : error.includes('timed out') ? (
-                                <>The file is too large or complex to process. Try a simpler or smaller document.</>
-                            ) : error.includes('Server') ? (
-                                <>There appears to be a server issue. Please try again later or contact support.</>
-                            ) : (
-                                <>Please try again with different content or check your connection.</>
+                                </div>
                             )}
-                        </p>
+
+                            {activeTab === 'youtube' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">YouTube Video URL</label>
+                                        <Input
+                                            type="url"
+                                            placeholder="https://www.youtube.com/watch?v=..."
+                                            value={url}
+                                            onChange={handleUrlChange}
+                                            className="w-full"
+                                        />
+                                        <p className="text-xs text-gray-500">
+                                            We'll automatically fetch the video transcript for topic generation.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 pt-2">
+                                        <Button
+                                            onClick={handleContentProcessing}
+                                            disabled={processing.isProcessing || !url.trim()}
+                                            className="flex items-center gap-2"
+                                        >
+                                            {processing.isProcessing ? (
+                                                <Spinner className="h-4 w-4" />
+                                            ) : (
+                                                <Youtube className="h-4 w-4" />
+                                            )}
+                                            {processing.isProcessing ? 'Processing Video...' : 'Process YouTube Video'}
+                                        </Button>
+
+                                        {processing.currentStep && activeTab === 'youtube' && (
+                                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                {getStepIcon()}
+                                                {processing.currentStep}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'podcast' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Podcast RSS Feed URL</label>
+                                        <Input
+                                            type="url"
+                                            placeholder="https://example.com/podcast-feed.xml"
+                                            value={url}
+                                            onChange={handleUrlChange}
+                                            className="w-full"
+                                        />
+                                        <p className="text-xs text-gray-500">
+                                            We'll download and transcribe the latest episode for analysis.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 pt-2">
+                                        <Button
+                                            onClick={handleContentProcessing}
+                                            disabled={processing.isProcessing || !url.trim()}
+                                            className="flex items-center gap-2"
+                                        >
+                                            {processing.isProcessing ? (
+                                                <Spinner className="h-4 w-4" />
+                                            ) : (
+                                                <Headphones className="h-4 w-4" />
+                                            )}
+                                            {processing.isProcessing ? 'Processing Podcast...' : 'Process Podcast'}
+                                        </Button>
+
+                                        {processing.currentStep && activeTab === 'podcast' && (
+                                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                {getStepIcon()}
+                                                {processing.currentStep}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-4 pt-4 border-t">
+                            <Button
+                                variant="outline"
+                                onClick={handleLoadSampleTopics}
+                                className="flex items-center gap-2"
+                            >
+                                <Sparkles className="h-4 w-4" />
+                                Try Sample Topics
+                            </Button>
+
+                            {processing.extractedTopics.length > 0 && (
+                                <div className="flex items-center gap-2 text-sm text-green-600">
+                                    <CheckCircle className="h-4 w-4" />
+                                    {processing.extractedTopics.length} topics generated
+                                </div>
+                            )}
+
+                            {/* Debug Info - Remove this after fixing */}
+                            {process.env.NODE_ENV === 'development' && (
+                                <div className="bg-yellow-100 border border-yellow-300 p-3 rounded-lg text-sm">
+                                    <div className="font-medium text-yellow-800 mb-1">Debug Info:</div>
+                                    <div className="text-yellow-700 space-y-1">
+                                        <div>Active Tab: <span className="font-mono bg-yellow-200 px-1 rounded">{activeTab}</span></div>
+                                        <div>File: <span className="font-mono bg-yellow-200 px-1 rounded">{file?.name || 'none'}</span></div>
+                                        <div>URL: <span className="font-mono bg-yellow-200 px-1 rounded">{url?.substring(0, 40) || 'none'}</span></div>
+                                        <div>Processing: <span className="font-mono bg-yellow-200 px-1 rounded">{processing.isProcessing ? 'Yes' : 'No'}</span></div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                )}
+                </CardContent>
+            </Card>
 
-                {expanded && (
-                    <div className="flex flex-col items-center mt-4">
-                        <Button
-                            variant="link"
-                            className="text-xs flex items-center"
-                            onClick={handleLoadSampleTopics}
-                        >
-                            <span>Load Demo Topics</span>
-                            <span className="ml-1 text-xs text-muted-foreground">(for testing only)</span>
-                        </Button>
-                        <p className="text-xs text-muted-foreground mt-1">No API calls will be made when using demo topics</p>
-                    </div>
-                )}
-            </div>
+            {/* Processing Status and Error Display */}
+            {processing.error && (
+                <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{processing.error}</AlertDescription>
+                </Alert>
+            )}
 
-            {/* Topics Section */}
-            {extractedTopics.length > 0 && (
-                <div className="mt-4 p-4 border-t">
-                    <h3 className="text-lg font-semibold mb-4">Choose a Topic for Debate</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {extractedTopics.map((topic, index) => {
-                            // Ensure topic has arguments array
-                            const topicArgs = Array.isArray(topic.arguments) ? topic.arguments : [];
+            {/* Extracted Topics Display */}
+            {processing.extractedTopics.length > 0 && (
+                <Card>
+                    <CardHeader className="cursor-pointer" onClick={handleToggleExpanded}>
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="flex items-center gap-2">
+                                <CheckCircle className="h-5 w-5 text-green-500" />
+                                Generated Debate Topics ({processing.extractedTopics.length})
+                            </CardTitle>
+                            {processing.isExpanded ? (
+                                <ChevronUp className="h-4 w-4" />
+                            ) : (
+                                <ChevronDown className="h-4 w-4" />
+                            )}
+                        </div>
+                        <CardDescription>
+                            Select a topic to start your debate
+                        </CardDescription>
+                    </CardHeader>
 
-                            return (
+                    {processing.isExpanded && (
+                        <CardContent className="space-y-4">
+                            {processing.extractedTopics.map((topic, index) => (
                                 <div
                                     key={index}
-                                    className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedTopic === index
-                                        ? 'border-primary bg-primary/5 shadow-sm'
-                                        : 'hover:border-primary/50'
+                                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${processing.selectedTopicIndex === index
+                                        ? 'border-blue-500 bg-blue-50'
+                                        : 'border-gray-200 hover:border-gray-300'
                                         }`}
                                     onClick={() => handleSelectTopic(index)}
                                 >
-                                    <div className="flex justify-between items-start">
-                                        <h4 className="font-semibold">{topic.title || 'Untitled Topic'}</h4>
-                                        {selectedTopic === index && (
-                                            <Check className="h-4 w-4 text-primary" />
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-muted-foreground mt-1 mb-2">
-                                        {topicArgs.length} key arguments •
-                                        {Math.round((topic.confidence || 0) * 100)}% confidence
-                                    </p>
-                                    <div className="flex flex-wrap gap-2 mb-3">
-                                        {topicArgs.slice(0, 3).map((arg, i) => (
-                                            <span
-                                                key={i}
-                                                className="px-2 py-1 bg-secondary rounded-full text-xs"
-                                            >
-                                                {arg.claim || 'Unnamed claim'}
-                                            </span>
-                                        ))}
-                                    </div>
-                                    {selectedTopic === index && topicArgs.length > 0 && (
-                                        <div className="mt-3 pt-3 border-t">
-                                            <h5 className="font-medium text-sm mb-1">Sample Evidence:</h5>
-                                            <p className="text-xs text-muted-foreground">
-                                                {topicArgs[0].evidence || 'No evidence provided'}
-                                            </p>
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <h3 className="font-semibold text-lg mb-2">{topic.title}</h3>
+                                            <p className="text-gray-600 text-sm mb-3">{topic.summary}</p>
+                                            <div className="flex items-center gap-2">
+                                                <Badge variant="secondary" className="text-xs">
+                                                    {Math.round((topic.confidence || 0) * 100)}% confidence
+                                                </Badge>
+                                                {processing.selectedTopicIndex === index && (
+                                                    <Badge variant="default" className="text-xs">
+                                                        Selected
+                                                    </Badge>
+                                                )}
+                                            </div>
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
-                            );
-                        })}
-                    </div>
-                    <div className="mt-6 flex justify-end">
-                        <Button
-                            onClick={handleStartDebate}
-                            disabled={selectedTopic === null}
-                            className="px-8"
-                        >
-                            Use Selected Topic
-                        </Button>
-                    </div>
-                </div>
+                            ))}
+
+                            {processing.selectedTopicIndex !== null && (
+                                <div className="pt-4 border-t">
+                                    <Button
+                                        onClick={handleStartDebate}
+                                        className="w-full flex items-center gap-2"
+                                        size="lg"
+                                    >
+                                        <Sparkles className="h-4 w-4" />
+                                        Start Debate with Selected Topic
+                                    </Button>
+                                </div>
+                            )}
+                        </CardContent>
+                    )}
+                </Card>
+            )}
+
+            {/* File Status Display */}
+            {fileStatus.message && (
+                <Alert className={fileStatus.className}>
+                    <AlertDescription>{fileStatus.message}</AlertDescription>
+                </Alert>
             )}
         </div>
     );
