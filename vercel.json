@@ -1,0 +1,33 @@
+{
+    "buildCommand": "npm install framer-motion@12.6.3 @emotion/is-prop-valid && npm run build",
+    "installCommand": "npm install",
+    "framework": "nextjs",
+    "outputDirectory": ".next",
+    "version": 2,
+    "env": {
+        "NEXT_PUBLIC_USE_REAL_API": "true",
+        "USE_MOCK_DATA": "false"
+    },
+    "functions": {
+        "src/app/api/debate-experts/route.ts": {
+            "maxDuration": 30
+        },
+        "src/app/api/perplexity/**": {
+            "maxDuration": 30
+        },
+        "src/app/api/debate/**": {
+            "maxDuration": 45
+        }
+    },
+    "headers": [
+        {
+            "source": "/static/(.*)",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "public, max-age=31536000, immutable"
+                }
+            ]
+        }
+    ]
+}
