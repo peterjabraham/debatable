@@ -26,8 +26,8 @@ export function UserNavigation() {
     const { data: session, status } = useSession();
 
     const isAuthenticated = status === 'authenticated' && session?.user;
-    const userInitials = session?.user?.name 
-        ? session.user.name.split(' ').map(n => n[0]).join('').toUpperCase() 
+    const userInitials = session?.user?.name
+        ? session.user.name.split(' ').map(n => n[0]).join('').toUpperCase()
         : 'U';
 
     return (

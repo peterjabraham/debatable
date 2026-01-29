@@ -3,7 +3,6 @@
 import { signIn, signOut } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
 import { useState, Suspense } from "react";
 
 function SignInContent() {
@@ -78,16 +77,6 @@ function SignInContent() {
                     </div>
                 </div>
 
-                <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
-                    By signing in, you agree to our{" "}
-                    <Link href="/terms" className="font-medium text-primary hover:text-primary-600">
-                        Terms of Service
-                    </Link>{" "}
-                    and{" "}
-                    <Link href="/privacy" className="font-medium text-primary hover:text-primary-600">
-                        Privacy Policy
-                    </Link>
-                </p>
             </div>
         </div>
     );
