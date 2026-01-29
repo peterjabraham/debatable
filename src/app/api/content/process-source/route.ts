@@ -7,10 +7,12 @@ import { authOptions } from '@/lib/auth';
 import { createDocument, updateDocument, USER_CONTENT, CONTENT_JOBS } from '@/lib/db/firestore';
 import { ProcessedContent, ContentProcessingResponse, ContentProcessingError, DebateTopic } from '@/types/content';
 import { extractTextFromDocument } from '@/lib/content-processing/document-processor';
-import { extractYouTubeText } from '@/lib/content-processing/youtube-processor';
-import { extractPodcastText } from '@/lib/content-processing/podcast-processor';
+import { extractYouTubeText, extractYouTubeTextEnhanced } from '@/lib/content-processing/youtube-processor';
+import { extractPodcastText, extractPodcastTextEnhanced } from '@/lib/content-processing/podcast-processor';
 import {
     extractTopicsFromText,
+    extractTopicsFromEnhancedYouTube,
+    extractTopicsFromEnhancedPodcast,
     generateTopicsForContentType,
     validateTopicStructure,
     generateFallbackTopics
@@ -184,6 +186,9 @@ export async function POST(request: NextRequest) {
         // Extract text based on source type
         let extractedText: string;
         let textStoragePath: string | undefined;
+        // Enhancement 4.A & 4.B: Store enhanced media data for better topic extraction
+        let enhancedYouTubeData: any = null;
+        let enhancedPodcastData: any = null;
 
         try {
             switch (sourceType) {
@@ -199,20 +204,45 @@ export async function POST(request: NextRequest) {
                     // Extract text from PDF
                     const pdfText = await extractTextFromDocument(filePath);
                     if (!pdfText) {
-                        throw new Error('Failed to extract text from PDF - file may be corrupted or contain only images');
+                        throw new Error('Failed to extract text from PDF - file may be corrupted, contain only images, or be a scanned document');
                     }
+
+                    // Check if extracted text is meaningful enough for topic generation
+                    const meaningfulText = pdfText.trim().replace(/[\s\n\r\t]/g, '');
+                    if (meaningfulText.length < 100) {
+                        console.warn(`[Process Source] PDF extracted very little text (${meaningfulText.length} characters). May contain mostly images.`);
+                    }
+
                     extractedText = pdfText;
                     textStoragePath = filePath;
                     break;
 
                 case 'youtube':
                     if (!url) throw new Error('YouTube URL is required');
-                    extractedText = await extractYouTubeText(url);
+
+                    // Enhancement 4.A & 4.B: Use enhanced YouTube processing
+                    try {
+                        enhancedYouTubeData = await extractYouTubeTextEnhanced(url);
+                        extractedText = enhancedYouTubeData.transcript;
+                        console.log(`[Process Source] Enhanced YouTube processing successful - Title: "${enhancedYouTubeData.title}"`);
+                    } catch (enhancedError) {
+                        console.warn('[Process Source] Enhanced YouTube processing failed, falling back to basic extraction:', enhancedError);
+                        extractedText = await extractYouTubeText(url);
+                    }
                     break;
 
                 case 'podcast':
                     if (!url) throw new Error('Podcast URL is required');
-                    extractedText = await extractPodcastText(url);
+
+                    // Enhancement 4.A & 4.B: Use enhanced podcast processing
+                    try {
+                        enhancedPodcastData = await extractPodcastTextEnhanced(url);
+                        extractedText = enhancedPodcastData.transcript;
+                        console.log(`[Process Source] Enhanced podcast processing successful - Episode: "${enhancedPodcastData.episodeTitle}"`);
+                    } catch (enhancedError) {
+                        console.warn('[Process Source] Enhanced podcast processing failed, falling back to basic extraction:', enhancedError);
+                        extractedText = await extractPodcastText(url);
+                    }
                     break;
 
                 default:
@@ -246,31 +276,60 @@ export async function POST(request: NextRequest) {
 
         try {
             console.log(`[Process Source] Generating topics for ${sourceType} content`);
+            console.log(`[Process Source] Extracted text preview: "${extractedText.substring(0, 200)}..."`);
 
-            // Use content-type specific topic generation
-            debateTopics = await generateTopicsForContentType(
-                extractedText,
-                sourceType as 'pdf' | 'youtube' | 'podcast',
-                5
-            );
+            // Enhancement 4.A & 4.B: Use enhanced media topic extraction if available
+            if (sourceType === 'youtube' && enhancedYouTubeData) {
+                console.log(`[Process Source] Using enhanced YouTube topic extraction with video title context`);
+                debateTopics = await extractTopicsFromEnhancedYouTube(enhancedYouTubeData);
+            } else if (sourceType === 'podcast' && enhancedPodcastData) {
+                console.log(`[Process Source] Using enhanced podcast topic extraction with episode metadata`);
+                debateTopics = await extractTopicsFromEnhancedPodcast(enhancedPodcastData);
+            } else {
+                // Use content-type specific topic generation for other sources
+                debateTopics = await generateTopicsForContentType(
+                    extractedText,
+                    sourceType as 'pdf' | 'youtube' | 'podcast',
+                    5
+                );
+            }
+
+            console.log(`[Process Source] Initial topics generated:`, debateTopics.map(t => ({ title: t.title, summary: t.summary?.substring(0, 50) + '...', confidence: t.confidence })));
 
             // Validate and filter topics
             debateTopics = validateTopicStructure(debateTopics);
 
-            // If no valid topics generated, use fallback
+            console.log(`[Process Source] After validation:`, debateTopics.map(t => ({ title: t.title, summary: t.summary?.substring(0, 50) + '...', confidence: t.confidence })));
+
+            // Additional safety check - ensure all topics have valid titles and summaries
+            debateTopics = debateTopics.map(topic => ({
+                title: topic.title || 'Untitled Topic',
+                summary: topic.summary || 'Analysis of the content and its key discussion points.',
+                confidence: topic.confidence || 0.5
+            }));
+
+            // If no valid topics generated, this suggests the content is not suitable
             if (debateTopics.length === 0) {
-                console.warn('[Process Source] No valid topics generated, using fallback');
-                debateTopics = generateFallbackTopics(sourceName, sourceType as any);
+                console.warn('[Process Source] No valid topics generated from content');
+                throw new Error('Unable to generate debate topics from this content. The text may not contain suitable material for debate generation.');
             }
 
-            console.log(`[Process Source] Generated ${debateTopics.length} topics`);
+            console.log(`[Process Source] Final topics ready:`, debateTopics.map(t => ({ title: t.title, summary: t.summary?.substring(0, 50) + '...', confidence: t.confidence })));
 
         } catch (topicError: any) {
             console.error('[Process Source] Topic generation failed:', topicError);
 
-            // Use fallback topic generation
-            console.log('[Process Source] Using fallback topic generation');
-            debateTopics = generateFallbackTopics(sourceName, sourceType as any);
+            // Fail gracefully with an informative error
+            await updateProcessingStatus(contentId, 'failed', {
+                errorMessage: `Topic generation failed: ${topicError.message}`
+            });
+
+            const errorResponse: ContentProcessingError = {
+                error: 'Topic generation failed',
+                details: topicError.message,
+                contentId
+            };
+            return configureCors(NextResponse.json(errorResponse, { status: 500 }));
         }
 
         // Update final status

@@ -104,8 +104,14 @@ export function ContentUploader({ fileStatus }: ContentUploaderProps) {
             if (!file.name.toLowerCase().endsWith('.pdf')) {
                 return 'Please select a valid PDF file.';
             }
+            if (file.size === 0) {
+                return 'The selected file appears to be empty. Please select a valid PDF file.';
+            }
             if (file.size > 50 * 1024 * 1024) {
                 return 'File size must be less than 50MB.';
+            }
+            if (file.type && !file.type.includes('pdf')) {
+                return 'Please select a valid PDF file. The selected file may be corrupted or renamed.';
             }
         } else if (currentTab === 'youtube') {
             if (!url.trim()) return 'Please enter a YouTube URL.';
@@ -183,14 +189,40 @@ export function ContentUploader({ fileStatus }: ContentUploaderProps) {
 
             console.log(`[ContentUploader] Processing ${sourceType} content`);
 
+            // Create a timeout for the fetch request (5 minutes for large files)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minutes
+
             const response = await fetch('/api/content/process-source', {
                 method: 'POST',
                 body: formData,
+                signal: controller.signal,
             });
 
+            clearTimeout(timeoutId);
+
             if (!response.ok) {
-                const errorData: ContentProcessingError = await response.json();
-                throw new Error(errorData.details || errorData.error || 'Processing failed');
+                let errorMessage = 'Processing failed';
+
+                try {
+                    // Try to parse error as JSON first
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const errorData: ContentProcessingError = await response.json();
+                        errorMessage = errorData.details || errorData.error || 'Processing failed';
+                    } else {
+                        // Handle non-JSON responses (HTML error pages, etc.)
+                        const textResponse = await response.text();
+                        errorMessage = `Server error (${response.status}): ${response.statusText}`;
+                        console.error('[ContentUploader] Non-JSON error response:', textResponse.substring(0, 200));
+                    }
+                } catch (parseError) {
+                    // JSON parsing failed - use fallback error message
+                    errorMessage = `Server error (${response.status}): ${response.statusText}`;
+                    console.error('[ContentUploader] Failed to parse error response:', parseError);
+                }
+
+                throw new Error(errorMessage);
             }
 
             setProcessing(prev => ({ ...prev, currentStep: 'Extracting debate topics...' }));
@@ -227,16 +259,45 @@ export function ContentUploader({ fileStatus }: ContentUploaderProps) {
         } catch (error: any) {
             console.error('[ContentUploader] Processing error:', error);
 
+            // Provide user-friendly error messages
+            let userMessage = error.message;
+
+            if (error.name === 'AbortError') {
+                userMessage = 'Request timed out. The file may be too large or the server is busy. Please try again with a smaller file.';
+            } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                userMessage = 'Network error: Unable to connect to the server. Please check your internet connection and try again.';
+            } else if (error.message.includes('Failed to fetch')) {
+                userMessage = 'Network error: Request failed. Please check your connection and try again.';
+            } else if (error.message.includes('timeout')) {
+                userMessage = 'Request timed out. The file may be too large or the server is busy. Please try again.';
+            } else if (error.message.includes('contain only images') || error.message.includes('scanned document') || error.message.includes('no extractable text')) {
+                userMessage = 'This PDF appears to contain mostly images or scanned content. For best results, please use a text-based PDF or convert scanned documents to searchable PDFs first.';
+            } else if (error.message.includes('mostly images') || error.message.includes('image-heavy')) {
+                userMessage = 'This PDF contains many images which may affect text extraction. Try using a PDF with more text content or convert images to text.';
+            } else if (error.message.includes('corrupted') || error.message.includes('invalid format')) {
+                userMessage = 'The PDF file appears to be corrupted or in an invalid format. Please try with a different PDF file.';
+            } else if (error.message.includes('encrypted') || error.message.includes('password-protected')) {
+                userMessage = 'This PDF is password-protected. Please remove the password protection and try again.';
+            } else if (error.message.includes('Unable to generate debate topics') || error.message.includes('not suitable for debate generation')) {
+                userMessage = 'This document does not contain suitable content for generating debate topics. Please try a document with more argumentative or analytical content.';
+            } else if (error.message.includes('Topic generation failed')) {
+                userMessage = 'Unable to generate debate topics from this document. The content may be too technical or not suitable for debate format.';
+            } else if (error.message.includes('Server error (5')) {
+                userMessage = 'Server error: The service is temporarily unavailable. Please try again in a few moments.';
+            } else if (error.message.includes('Server error (4')) {
+                userMessage = 'Request error: There was a problem with your request. Please check your file and try again.';
+            }
+
             setProcessing(prev => ({
                 ...prev,
                 isProcessing: false,
                 currentStep: '',
-                error: error.message
+                error: userMessage
             }));
 
             toast({
                 title: 'Processing Failed',
-                description: error.message,
+                description: userMessage,
                 variant: 'destructive',
             });
         }
@@ -291,39 +352,7 @@ export function ContentUploader({ fileStatus }: ContentUploaderProps) {
         setProcessing(prev => ({ ...prev, isExpanded: !prev.isExpanded }));
     };
 
-    const handleLoadSampleTopics = () => {
-        const sampleTopics: DebateTopic[] = [
-            {
-                title: "AI Impact on Job Market",
-                summary: "Exploring whether artificial intelligence will create more jobs than it eliminates, and how society should prepare for workforce transformation.",
-                confidence: 0.9
-            },
-            {
-                title: "Universal Basic Income Effectiveness",
-                summary: "Debating the potential benefits and drawbacks of implementing UBI as a solution to technological unemployment and economic inequality.",
-                confidence: 0.85
-            },
-            {
-                title: "Climate Change Policy Priorities",
-                summary: "Examining different approaches to climate action: carbon pricing, green technology investment, or regulatory mandates.",
-                confidence: 0.88
-            }
-        ];
 
-        setProcessing(prev => ({
-            ...prev,
-            extractedTopics: sampleTopics,
-            isExpanded: true,
-            contentId: 'sample-content'
-        }));
-
-        setAvailableTopics(sampleTopics);
-
-        toast({
-            title: 'Sample Topics Loaded',
-            description: 'Try out the debate system with these sample topics!',
-        });
-    };
 
     return (
         <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -504,36 +533,12 @@ export function ContentUploader({ fileStatus }: ContentUploaderProps) {
                             )}
                         </div>
 
-                        <div className="flex items-center gap-4 pt-4 border-t">
-                            <Button
-                                variant="outline"
-                                onClick={handleLoadSampleTopics}
-                                className="flex items-center gap-2"
-                            >
-                                <Sparkles className="h-4 w-4" />
-                                Try Sample Topics
-                            </Button>
-
-                            {processing.extractedTopics.length > 0 && (
-                                <div className="flex items-center gap-2 text-sm text-green-600">
-                                    <CheckCircle className="h-4 w-4" />
-                                    {processing.extractedTopics.length} topics generated
-                                </div>
-                            )}
-
-                            {/* Debug Info - Remove this after fixing */}
-                            {process.env.NODE_ENV === 'development' && (
-                                <div className="bg-yellow-100 border border-yellow-300 p-3 rounded-lg text-sm">
-                                    <div className="font-medium text-yellow-800 mb-1">Debug Info:</div>
-                                    <div className="text-yellow-700 space-y-1">
-                                        <div>Active Tab: <span className="font-mono bg-yellow-200 px-1 rounded">{activeTab}</span></div>
-                                        <div>File: <span className="font-mono bg-yellow-200 px-1 rounded">{file?.name || 'none'}</span></div>
-                                        <div>URL: <span className="font-mono bg-yellow-200 px-1 rounded">{url?.substring(0, 40) || 'none'}</span></div>
-                                        <div>Processing: <span className="font-mono bg-yellow-200 px-1 rounded">{processing.isProcessing ? 'Yes' : 'No'}</span></div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                        {processing.extractedTopics.length > 0 && (
+                            <div className="flex items-center gap-2 pt-4 border-t text-sm text-green-600">
+                                <CheckCircle className="h-4 w-4" />
+                                {processing.extractedTopics.length} topics generated
+                            </div>
+                        )}
                     </div>
                 </CardContent>
             </Card>

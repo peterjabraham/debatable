@@ -2,6 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import pdfParse from 'pdf-parse';
 
+
+
 /**
  * Extract text from a document file
  * @param filePath The path to the document file
@@ -71,12 +73,22 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
             try {
                 pdfData = await pdfParse(fileData, {
                     // Add a timeout to prevent hanging on corrupted PDFs
-                    max: 5 * 1024 * 1024, // 5MB max file size 
-                    timeout: 45000, // 45 seconds timeout
+                    max: 10 * 1024 * 1024, // 10MB max file size (increased from 5MB)
+                    timeout: 60000, // 60 seconds timeout (increased for image-heavy PDFs)
                     pagerender: function (pageData) {
-                        // Just extract the text - no rendering
+                        // Extract text and preserve page structure for citations
+                        if (pageData && pageData.getTextContent) {
+                            return pageData.getTextContent().then((textContent: any) => {
+                                return textContent.items.map((item: any) => item.str).join(' ');
+                            });
+                        }
                         return Promise.resolve();
-                    }
+                    },
+                    // Additional options for better text extraction and structure preservation
+                    normalizeWhitespace: true,
+                    disableCombineTextItems: false,
+                    // Keep structure for better topic identification
+                    useSystemFonts: true
                 });
             } catch (parseError) {
                 console.error('PDF parsing error:', parseError);
@@ -87,33 +99,65 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
                     parseError.message?.includes('invalid') ||
                     parseError.message?.includes('corrupted') ||
                     parseError.message?.includes('Invalid PDF')) {
-                    throw new Error('The PDF file appears to be corrupted or invalid format');
+                    throw new Error('The PDF file appears to be corrupted or invalid format. If this is a scanned document, please try converting it to a text-based PDF first.');
                 }
 
                 if (parseError.message?.includes('timeout') ||
                     parseError.message?.includes('timed out') ||
                     parseError.message?.includes('exceeded')) {
-                    throw new Error('PDF processing timed out - the file may be too large or too complex');
+                    throw new Error('PDF processing timed out - the file may be too large, too complex, or contain many images. Try with a smaller or text-based PDF.');
                 }
 
                 if (parseError.message?.includes('encrypted') ||
                     parseError.message?.includes('password')) {
-                    throw new Error('The PDF file is encrypted or password-protected');
+                    throw new Error('The PDF file is encrypted or password-protected. Please remove the password or use an unprotected version.');
                 }
 
-                // Default error
-                throw new Error(`PDF parsing failed: ${parseError.message}`);
+                // Check for image-heavy PDF issues
+                if (parseError.message?.includes('no text') ||
+                    parseError.message?.includes('image') ||
+                    parseError.message?.includes('scan')) {
+                    throw new Error('This PDF appears to contain mostly images or scanned content. For best results, use text-based PDFs rather than scanned documents.');
+                }
+
+                // Default error with helpful guidance
+                throw new Error(`PDF parsing failed: ${parseError.message}. If this PDF contains mostly images or is a scanned document, consider using a text-based PDF instead.`);
             }
 
             console.log(`PDF processed successfully, extracted ${pdfData.text?.length || 0} characters`);
 
             // Check if we actually got meaningful text
-            if (!pdfData || !pdfData.text || pdfData.text.trim().length === 0) {
-                throw new Error('PDF appears to be empty or contains no extractable text - it may contain only images or scanned content');
+            const extractedText = pdfData.text?.trim() || '';
+            console.log(`PDF text length: ${extractedText.length} characters`);
+            console.log(`PDF pages: ${pdfData.numpages || 'unknown'}`);
+
+            // If we got some text, even minimal, try to work with it
+            if (extractedText.length > 0) {
+                // Clean and structure the text for better topic extraction
+                let cleanedText = extractedText
+                    // Fix common OCR/extraction issues
+                    .replace(/\s+/g, ' ')  // Normalize whitespace
+                    .replace(/\n{3,}/g, '\n\n')  // Limit consecutive newlines
+                    .replace(/[^\w\s\.\,\;\:\!\?\-\(\)\[\]\"\']/g, ' ')  // Remove special chars but keep punctuation
+                    .trim();
+
+                // Check if the text is mostly meaningful (not just whitespace or control characters)
+                const meaningfulText = cleanedText.replace(/[\s\n\r\t]/g, '');
+                console.log(`Meaningful text length: ${meaningfulText.length} characters`);
+
+                if (meaningfulText.length >= 5) {
+                    console.log(`Sample extracted text: "${cleanedText.substring(0, 200)}"`);
+
+                    // Add metadata for citation purposes
+                    const structuredText = `Document: ${path.basename(filePath)}\n\nContent:\n${cleanedText}`;
+                    return structuredText;
+                }
             }
 
-            // Return the extracted text
-            return pdfData.text;
+            // If we have very little or no extractable text, fail with a clear message
+            console.warn('PDF contains no or very little extractable text - likely contains mostly images or is scanned');
+
+            throw new Error('This PDF appears to contain mostly images or scanned content with no extractable text. Please use a text-based PDF or convert scanned documents to searchable format.');
         } catch (readError) {
             // Log the specific error
             console.error('PDF extraction specific error:', readError);

@@ -13,6 +13,25 @@ export interface PodcastEpisode {
     pubDate?: string;
 }
 
+// Enhancement 4.A & 4.B: Enhanced podcast extraction with metadata and timestamps
+export interface EnhancedPodcastExtraction {
+    episodeTitle: string;
+    podcastTitle?: string;
+    description?: string;
+    transcript: string;
+    segmentedTranscript?: PodcastSegment[];
+    contextualContent: string; // Episode title + podcast title + transcript
+    episodeIndex: number;
+    audioUrl: string;
+}
+
+// Enhancement 4.B: Interface for podcast transcript segments
+export interface PodcastSegment {
+    text: string;
+    timestamp: number;  // Estimated timestamp in seconds
+    segmentIndex: number;
+}
+
 /**
  * Validates if a URL is a valid podcast RSS feed URL
  */
@@ -175,15 +194,31 @@ export async function cleanupTempFile(filePath: string): Promise<void> {
 }
 
 /**
- * Main function to extract text from podcast RSS feed
+ * Enhancement 4.A & 4.B: Creates segmented transcript with estimated timestamps
  */
-export async function extractPodcastText(url: string, episodeIndex: number = 0): Promise<string> {
-    console.log(`[Podcast Processor] Processing podcast URL: ${url}`);
+export function createSegmentedTranscript(transcript: string, estimatedDuration?: number): PodcastSegment[] {
+    // Split transcript into sentences for basic segmentation
+    const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 10);
+    const totalSentences = sentences.length;
+    const durationPerSentence = estimatedDuration ? estimatedDuration / totalSentences : 30; // Default 30 seconds per sentence
+
+    return sentences.map((sentence, index) => ({
+        text: sentence.trim(),
+        timestamp: Math.floor(index * durationPerSentence),
+        segmentIndex: index
+    }));
+}
+
+/**
+ * Enhancement 4.A & 4.B: Enhanced podcast processing with metadata and timestamps
+ */
+export async function extractPodcastTextEnhanced(url: string, episodeIndex: number = 0): Promise<EnhancedPodcastExtraction> {
+    console.log(`[Podcast Processor] Enhanced processing of podcast URL: ${url}`);
 
     let tempFilePath: string | null = null;
 
     try {
-        // Parse RSS feed to get episodes
+        // Parse RSS feed to get episodes and podcast metadata
         const episodes = await parsePodcastRss(url);
 
         if (episodeIndex >= episodes.length) {
@@ -193,25 +228,67 @@ export async function extractPodcastText(url: string, episodeIndex: number = 0):
         const episode = episodes[episodeIndex];
         console.log(`[Podcast Processor] Processing episode: ${episode.title}`);
 
+        // Enhancement 4.A: Extract podcast title from RSS feed
+        let podcastTitle: string | undefined;
+        try {
+            const Parser = require('rss-parser');
+            const rssParser = new Parser();
+            const feed = await rssParser.parseURL(url);
+            podcastTitle = feed.title;
+            console.log(`[Podcast Processor] Podcast title: ${podcastTitle}`);
+        } catch (error) {
+            console.warn('[Podcast Processor] Could not extract podcast title:', error);
+        }
+
         // Download audio
         tempFilePath = await downloadPodcastAudio(episode.audioUrl);
 
         // Transcribe audio
         const transcript = await transcribeAudio(tempFilePath);
 
-        // Clean up temp file
-        await cleanupTempFile(tempFilePath);
-        tempFilePath = null;
+        // Enhancement 4.B: Create segmented transcript with estimated timestamps
+        const segmentedTranscript = createSegmentedTranscript(transcript, episode.duration);
 
-        return transcript;
+        // Enhancement 4.A: Create contextual content with episode and podcast titles
+        const contextualContent = [
+            podcastTitle ? `Podcast: "${podcastTitle}"` : '',
+            `Episode: "${episode.title}"`,
+            episode.description ? `Description: ${episode.description}` : '',
+            `Transcript: ${transcript}`
+        ].filter(Boolean).join(' - ');
+
+        console.log(`[Podcast Processor] Enhanced processing successful:
+            - Podcast: ${podcastTitle || 'Unknown'}
+            - Episode: ${episode.title}
+            - Transcript: ${transcript.length} characters
+            - Segments: ${segmentedTranscript.length} estimated segments`);
+
+        return {
+            episodeTitle: episode.title,
+            podcastTitle,
+            description: episode.description,
+            transcript,
+            segmentedTranscript,
+            contextualContent,
+            episodeIndex,
+            audioUrl: episode.audioUrl
+        };
 
     } catch (error: any) {
-        // Ensure cleanup even if process fails
+        console.error(`[Podcast Processor] Enhanced processing error:`, error);
+        throw error;
+    } finally {
+        // Cleanup temp file
         if (tempFilePath) {
             await cleanupTempFile(tempFilePath);
         }
-
-        console.error(`[Podcast Processor] Error processing podcast:`, error);
-        throw error;
     }
+}
+
+/**
+ * Main function to extract text from podcast RSS feed (backward compatibility)
+ */
+export async function extractPodcastText(url: string, episodeIndex: number = 0): Promise<string> {
+    const enhanced = await extractPodcastTextEnhanced(url, episodeIndex);
+    return enhanced.transcript;
 } 

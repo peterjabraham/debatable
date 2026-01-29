@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "NODE_ENV=production next start",
+    "start": "NODE_ENV=production next start -p ${PORT:-3000}",
     "lint": "next lint",
     "api": "node server/index.js",
     "dev:api": "nodemon server/index.js",

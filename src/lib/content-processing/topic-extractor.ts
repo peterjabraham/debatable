@@ -8,6 +8,9 @@ import {
 import { DebateTopic } from '@/types/content';
 import { compareTwoStrings } from 'string-similarity';
 import openai from '@/lib/ai/openai-client';
+// Enhancement 4.A & 4.B: Import enhanced media interfaces
+import { EnhancedYouTubeExtraction, TranscriptSegment } from './youtube-processor';
+import { EnhancedPodcastExtraction, PodcastSegment } from './podcast-processor';
 
 const DEFAULT_OPTIONS: TopicExtractorOptions = {
     minConfidence: 0.6,
@@ -18,10 +21,12 @@ const DEFAULT_OPTIONS: TopicExtractorOptions = {
 
 /**
  * Enhanced topic extraction with OpenAI and content-type specific prompts
+ * Enhancement 4.A: Now supports contextual content with video titles
  */
 export async function extractTopicsFromText(
     text: string,
-    sourceType: 'pdf' | 'youtube' | 'podcast' | 'general' = 'general'
+    sourceType: 'pdf' | 'youtube' | 'podcast' | 'general' = 'general',
+    contextualContent?: string
 ): Promise<DebateTopic[]> {
     try {
         console.log(`[Topic Extractor] Extracting topics from ${sourceType} content`);
@@ -32,17 +37,41 @@ export async function extractTopicsFromText(
             return [];
         }
 
+        // Enhancement 4.A: Use contextual content (with video title) if available
+        const contentToAnalyze = contextualContent || text;
+
         // Use OpenAI for better topic extraction
-        const topics = await generateTopicsWithOpenAI(text, sourceType);
+        const topics = await generateTopicsWithOpenAI(contentToAnalyze, sourceType);
 
         if (topics && topics.length > 0) {
             console.log(`[Topic Extractor] Successfully extracted ${topics.length} topics using OpenAI`);
-            return topics;
+            // Validate all topics have proper titles and summaries
+            const validatedTopics = topics.map(topic => ({
+                title: topic.title || 'Untitled Topic',
+                summary: topic.summary || 'Analysis of the content and its key discussion points.',
+                confidence: topic.confidence || 0.7
+            }));
+            return validatedTopics;
         }
 
-        // Fallback to original method if OpenAI fails
-        console.log('[Topic Extractor] OpenAI extraction failed, falling back to local extraction');
-        return await extractTopicsLocalFallback(text);
+        // If OpenAI fails but we have meaningful content, try local extraction
+        console.log('[Topic Extractor] OpenAI extraction failed, attempting local extraction');
+        const localTopics = await extractTopicsLocalFallback(text);
+
+        if (localTopics && localTopics.length > 0) {
+            console.log(`[Topic Extractor] Successfully extracted ${localTopics.length} topics using local method`);
+            // Validate all topics have proper titles and summaries
+            const validatedTopics = localTopics.map(topic => ({
+                title: topic.title || 'Untitled Topic',
+                summary: topic.summary || 'Analysis of the content and its key discussion points.',
+                confidence: topic.confidence || 0.5
+            }));
+            return validatedTopics;
+        }
+
+        // If all extraction methods fail, this suggests the content is not suitable for topic extraction
+        console.warn('[Topic Extractor] Both OpenAI and local extraction failed - content may not contain debatable topics');
+        throw new Error('Unable to extract meaningful debate topics from this content. The text may be too short, technical, or not suitable for debate generation.');
 
     } catch (error) {
         console.error('[Topic Extractor] Error extracting topics:', error);
@@ -54,6 +83,128 @@ export async function extractTopicsFromText(
             console.error('[Topic Extractor] Fallback extraction also failed:', fallbackError);
             throw new Error(`Failed to extract topics: ${error.message}`);
         }
+    }
+}
+
+/**
+ * Enhancement 4.A & 4.B: Extract topics from enhanced YouTube data with timestamps
+ */
+export async function extractTopicsFromEnhancedYouTube(
+    enhancedData: EnhancedYouTubeExtraction
+): Promise<DebateTopic[]> {
+    try {
+        console.log(`[Topic Extractor] Extracting topics from enhanced YouTube data: "${enhancedData.title}"`);
+
+        // Enhancement 4.A: Use contextual content with video title
+        const topics = await generateTopicsWithOpenAI(enhancedData.contextualContent, 'youtube');
+
+        if (topics && topics.length > 0) {
+            // Enhancement 4.B: Add timestamp information to topics for citation
+            const enhancedTopics = topics.map(topic => ({
+                ...topic,
+                // Add metadata for citation purposes
+                sourceTitle: enhancedData.title,
+                sourceType: 'youtube' as const,
+                sourceId: enhancedData.videoId,
+                // Store segmented transcript for later citation lookup
+                segmentedTranscript: enhancedData.segmentedTranscript
+            }));
+
+            console.log(`[Topic Extractor] Successfully extracted ${enhancedTopics.length} topics with timestamp metadata`);
+            return enhancedTopics;
+        }
+
+        // Fallback to regular extraction if enhanced fails
+        return await extractTopicsFromText(enhancedData.transcript, 'youtube', enhancedData.contextualContent);
+
+    } catch (error) {
+        console.error('[Topic Extractor] Error extracting topics from enhanced YouTube data:', error);
+        // Final fallback to basic text extraction
+        return await extractTopicsFromText(enhancedData.transcript, 'youtube');
+    }
+}
+
+/**
+ * Enhancement 4.A & 4.B: Extract topics from enhanced podcast data with metadata
+ */
+export async function extractTopicsFromEnhancedPodcast(
+    enhancedData: EnhancedPodcastExtraction
+): Promise<DebateTopic[]> {
+    try {
+        console.log(`[Topic Extractor] Extracting topics from enhanced podcast data: "${enhancedData.episodeTitle}"`);
+
+        // Enhancement 4.A: Use contextual content with podcast and episode titles
+        const topics = await generateTopicsWithOpenAI(enhancedData.contextualContent, 'podcast');
+
+        if (topics && topics.length > 0) {
+            // Enhancement 4.B: Add podcast metadata for citation
+            const enhancedTopics = topics.map(topic => ({
+                ...topic,
+                // Add metadata for citation purposes
+                sourceTitle: enhancedData.episodeTitle,
+                podcastTitle: enhancedData.podcastTitle,
+                sourceType: 'podcast' as const,
+                sourceUrl: enhancedData.audioUrl,
+                episodeIndex: enhancedData.episodeIndex,
+                // Store segmented transcript for later citation lookup
+                segmentedTranscript: enhancedData.segmentedTranscript
+            }));
+
+            console.log(`[Topic Extractor] Successfully extracted ${enhancedTopics.length} topics with podcast metadata`);
+            return enhancedTopics;
+        }
+
+        // Fallback to regular extraction if enhanced fails
+        return await extractTopicsFromText(enhancedData.transcript, 'podcast', enhancedData.contextualContent);
+
+    } catch (error) {
+        console.error('[Topic Extractor] Error extracting topics from enhanced podcast data:', error);
+        // Final fallback to basic text extraction
+        return await extractTopicsFromText(enhancedData.transcript, 'podcast');
+    }
+}
+
+/**
+ * Enhancement 4.B: Find timestamp citations for specific topic content
+ */
+export function findTimestampCitations(
+    topic: DebateTopic & { segmentedTranscript?: TranscriptSegment[] },
+    searchText: string
+): { timestamp: string; text: string; url: string }[] {
+    if (!topic.segmentedTranscript || !topic.sourceId) {
+        return [];
+    }
+
+    const citations: { timestamp: string; text: string; url: string }[] = [];
+
+    for (const segment of topic.segmentedTranscript) {
+        if (segment.text.toLowerCase().includes(searchText.toLowerCase())) {
+            const formattedTime = formatTimestamp(segment.timestamp);
+            const youtubeUrl = `https://www.youtube.com/watch?v=${topic.sourceId}&t=${Math.floor(segment.timestamp)}s`;
+
+            citations.push({
+                timestamp: formattedTime,
+                text: segment.text,
+                url: youtubeUrl
+            });
+        }
+    }
+
+    return citations;
+}
+
+/**
+ * Enhancement 4.B: Helper to format timestamps
+ */
+function formatTimestamp(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    } else {
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
     }
 }
 
@@ -101,17 +252,27 @@ Focus on topics that have multiple valid perspectives and would generate meaning
 
     const prompt = `${contentTypePrompts[sourceType]}
 
-Please identify 3-5 specific, debatable topics from the following content. For each topic:
+Please identify AT LEAST 3 specific, debatable topics from the following content. For each topic:
 
 1. Create a clear, engaging title (10-60 characters)
 2. Write a neutral summary that explains what the debate would be about (50-150 words)
 3. Ensure the topic has multiple valid perspectives that could lead to substantive discussion
+4. Include enough context so the topic can be cited back to the source material
+
+Important guidelines:
+- Extract topics from the ACTUAL content provided, not generic assumptions
+- Focus on specific claims, arguments, or controversial points made in the text
+- Avoid overly general topics - be specific to what's discussed
+- If the content is very brief, extract the most debatable elements present
+- Topics should be suitable for structured debate between multiple perspectives
+- ALWAYS generate at least 3 topics, even if they need to be broader for short content
+- Each topic title must be unique and descriptive
 
 Format your response as a JSON array of objects with this structure:
 [
   {
     "title": "Clear, Engaging Topic Title",
-    "summary": "Neutral explanation of what this debate topic covers and why it's worth discussing.",
+    "summary": "Neutral explanation of what this debate topic covers and why it's worth discussing, with enough detail for citation.",
     "confidence": 0.8
   }
 ]
@@ -121,7 +282,7 @@ Content to analyze:
 ${text.substring(0, 12000)}
 ---
 
-Return ONLY the JSON array, no additional text.`;
+Return ONLY the JSON array, no additional text. ENSURE you generate at least 3 topics.`;
 
     try {
         const response = await openai.chat.completions.create({
@@ -199,10 +360,63 @@ async function extractTopicsLocalFallback(text: string): Promise<DebateTopic[]> 
     // Extract topics using the enhanced local method
     const extractionResult = await extractor.extractTopics(parsedDocument);
 
+    // If no topics were extracted, create content-based topics
+    if (!extractionResult.topics || extractionResult.topics.length === 0) {
+        console.log('[Topic Extractor] No topics extracted, creating content-based topics');
+
+        // Try to extract some key terms to create meaningful topics
+        const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g) || [];
+        const keyTerms = [...new Set(words)]
+            .filter(word => !['this', 'that', 'with', 'from', 'they', 'them', 'were', 'been', 'have', 'said', 'what', 'when', 'where', 'will'].includes(word))
+            .slice(0, 5);
+
+        if (keyTerms.length >= 2) {
+            return [
+                {
+                    title: `${keyTerms[0].charAt(0).toUpperCase() + keyTerms[0].slice(1)} Analysis`,
+                    summary: `Examination of ${keyTerms[0]} and its implications as discussed in the source material. This topic explores different perspectives on the matter.`,
+                    confidence: 0.6
+                },
+                {
+                    title: `${keyTerms[1].charAt(0).toUpperCase() + keyTerms[1].slice(1)} Debate`,
+                    summary: `Discussion of ${keyTerms[1]} and related concepts presented in the content. Multiple viewpoints can be considered for this topic.`,
+                    confidence: 0.6
+                },
+                {
+                    title: 'Content Key Issues',
+                    summary: 'Analysis of the main themes and controversial aspects presented in the source material, focusing on debatable elements.',
+                    confidence: 0.5
+                }
+            ];
+        }
+
+        // Fallback to generic topics
+        return [
+            {
+                title: 'Primary Content Analysis',
+                summary: 'Analysis of the main arguments and perspectives presented in the source material.',
+                confidence: 0.5
+            },
+            {
+                title: 'Content Implications',
+                summary: 'Discussion of the broader implications and consequences of the ideas presented in the source.',
+                confidence: 0.5
+            },
+            {
+                title: 'Alternative Perspectives',
+                summary: 'Exploration of different viewpoints and interpretations of the content provided.',
+                confidence: 0.5
+            }
+        ];
+    }
+
     // Convert to DebateTopic format
     const debateTopics: DebateTopic[] = extractionResult.topics.map(topic => {
+        // Ensure topic has a valid title
+        const topicTitle = topic.title || 'Untitled Topic';
+
         const topicArguments = extractionResult.args
-            .filter(arg => arg.topicTitle === topic.title)
+            .filter(arg => arg.topicTitle === topicTitle)
             .slice(0, 2); // Limit to 2 main arguments
 
         let summary = '';
@@ -212,13 +426,13 @@ async function extractTopicsLocalFallback(text: string): Promise<DebateTopic[]> 
                 summary += ` It also considers ${topicArguments[1].text}`;
             }
         } else {
-            summary = `Analysis of ${topic.title} and its implications.`;
+            summary = `Analysis of ${topicTitle} and its implications.`;
         }
 
         return {
-            title: topic.title,
+            title: topicTitle,
             summary: summary.substring(0, 200), // Limit summary length
-            confidence: topic.confidence
+            confidence: topic.confidence || 0.5
         };
     });
 
@@ -471,8 +685,19 @@ export class TopicExtractor {
      * Format a keyword into a proper topic title
      */
     private formatTopicTitle(keyword: string): string {
+        // Handle undefined or empty keywords
+        if (!keyword || typeof keyword !== 'string') {
+            return 'Untitled Topic';
+        }
+
+        // Trim and clean the keyword
+        const cleanKeyword = keyword.trim();
+        if (cleanKeyword.length === 0) {
+            return 'Untitled Topic';
+        }
+
         // Capitalize the first letter of each word
-        return keyword
+        return cleanKeyword
             .split(' ')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
             .join(' ');

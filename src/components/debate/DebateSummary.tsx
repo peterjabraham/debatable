@@ -264,8 +264,12 @@ export function DebateSummary({ topic, experts, messages, className }: DebateSum
                                 ))}
                             </div>
                         ) : (
-                            <div className="text-center text-muted-foreground py-4">
-                                No reading recommendations available for this topic yet.
+                            <div className="text-center text-muted-foreground py-4 border rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                                <p className="text-amber-700 dark:text-amber-300 font-medium mb-2">📚 No verified reading recommendations available</p>
+                                <p className="text-sm">
+                                    The system could not find reliable, topic-specific sources with working links for this debate topic.
+                                    Only verified, accessible content is shown to ensure quality.
+                                </p>
                             </div>
                         )}
                     </div>

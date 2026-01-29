@@ -31,7 +31,6 @@ yarn-error.log*
 
 # local env files
 .env*.local
-.cursor-tools.env
 
 # vercel
 .vercel
@@ -65,3 +64,5 @@ service-account*.json
 crank-debate-e7ffe747c370.json
 
 .repomix-output.txt
+
+uploads
