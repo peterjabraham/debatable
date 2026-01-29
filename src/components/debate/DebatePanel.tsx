@@ -313,9 +313,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
             // Check for API key
             const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 
-            // Set timeout for API request
+            // Set timeout for API request - 90 seconds for LLM calls
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 45000); // Increased to 45 seconds
+            const timeoutId = setTimeout(() => controller.abort(), 90000);
 
             // Construct proper request body for debate-experts API
             const requestBody = {
@@ -451,9 +451,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {
-                console.log('Historical figures API request timing out after 45 seconds');
+                console.log('Historical figures API request timing out after 90 seconds');
                 controller.abort();
-            }, 45000);
+            }, 90000);
 
             const response = await fetch('/api/debate-experts', {
                 method: 'POST',
