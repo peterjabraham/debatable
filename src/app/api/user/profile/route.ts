@@ -20,13 +20,22 @@ export async function GET() {
         const session = await getServerSession(authOptions);
 
         if (!session || !session.user || !session.user.id) {
-            console.log('Unauthenticated request to user profile API - returning empty response');
-
-            // Return 401 unauthorized instead of mock data to force proper authentication
-            return NextResponse.json(
-                { error: 'Authentication required' },
-                { status: 401 }
-            );
+            // Return a guest profile for unauthenticated users
+            // This allows the app to function without requiring login
+            return NextResponse.json({
+                id: 'guest',
+                email: 'guest@example.com',
+                name: 'Guest User',
+                profilePicture: null,
+                isGuest: true,
+                preferredLanguage: 'en',
+                preferredTopics: [],
+                expertTypes: ['domain', 'historical'],
+                settings: {
+                    notifications: false,
+                    theme: 'system'
+                }
+            });
         }
 
         // Get user profile from database
