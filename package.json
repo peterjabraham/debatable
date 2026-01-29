@@ -32,7 +32,7 @@
     "test:watch": "vitest watch",
     "generate-test-pdf": "node scripts/generate-test-pdf.js",
     "worker": "npx tsx src/lib/queue/worker.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && prisma db push --skip-generate"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.751.0",
