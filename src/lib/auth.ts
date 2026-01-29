@@ -1,19 +1,62 @@
 import { NextAuthOptions } from 'next-auth';
-import GitHubProvider from 'next-auth/providers/github';
-import GoogleProvider from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import { prisma } from '@/lib/db/prisma';
+import bcrypt from 'bcryptjs';
 
 export const authOptions: NextAuthOptions = {
     providers: [
-        GitHubProvider({
-            clientId: process.env.GITHUB_ID || '',
-            clientSecret: process.env.GITHUB_SECRET || '',
-        }),
-        GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID || '',
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-            authorization: {
-                params: {
-                    prompt: "select_account"
+        CredentialsProvider({
+            name: 'credentials',
+            credentials: {
+                email: { label: "Email", type: "email" },
+                password: { label: "Password", type: "password" }
+            },
+            async authorize(credentials) {
+                if (!credentials?.email || !credentials?.password) {
+                    throw new Error('Email and password required');
+                }
+
+                // Check for demo account (for testing without database)
+                if (credentials.email === 'demo@debate-able.com' && credentials.password === 'demo123') {
+                    return {
+                        id: 'demo-user',
+                        email: 'demo@debate-able.com',
+                        name: 'Demo User',
+                    };
+                }
+
+                try {
+                    // Try to find user in database
+                    const user = await prisma.user.findUnique({
+                        where: { email: credentials.email }
+                    });
+
+                    if (!user || !user.password) {
+                        throw new Error('Invalid email or password');
+                    }
+
+                    const isValid = await bcrypt.compare(credentials.password, user.password);
+                    
+                    if (!isValid) {
+                        throw new Error('Invalid email or password');
+                    }
+
+                    return {
+                        id: user.id,
+                        email: user.email,
+                        name: user.name,
+                        image: user.image,
+                    };
+                } catch (error) {
+                    // If database fails, only allow demo account
+                    if (credentials.email === 'demo@debate-able.com' && credentials.password === 'demo123') {
+                        return {
+                            id: 'demo-user',
+                            email: 'demo@debate-able.com',
+                            name: 'Demo User',
+                        };
+                    }
+                    throw new Error('Invalid email or password');
                 }
             }
         }),
@@ -22,141 +65,28 @@ export const authOptions: NextAuthOptions = {
         strategy: 'jwt',
         maxAge: 30 * 24 * 60 * 60, // 30 days
     },
-    cookies: {
-        sessionToken: {
-            name: `next-auth.session-token`,
-            options: {
-                httpOnly: true,
-                sameSite: 'lax',
-                path: '/',
-                secure: process.env.NODE_ENV === 'production',
-                maxAge: 30 * 24 * 60 * 60 // 30 days
-            }
-        },
-        callbackUrl: {
-            name: `next-auth.callback-url`,
-            options: {
-                httpOnly: true,
-                sameSite: 'lax',
-                path: '/',
-                secure: process.env.NODE_ENV === 'production',
-            }
-        },
-        csrfToken: {
-            name: `next-auth.csrf-token`,
-            options: {
-                httpOnly: true,
-                sameSite: 'lax',
-                path: '/',
-                secure: process.env.NODE_ENV === 'production',
-            }
-        }
-    },
     secret: process.env.NEXTAUTH_SECRET,
     pages: {
         signIn: '/auth/signin',
-        signOut: '/auth/sign-out',
         error: '/auth/error',
-        verifyRequest: '/auth/verify-request',
     },
     callbacks: {
         async session({ session, token }) {
-            try {
-                // Safe default session if none provided
-                if (!session) {
-                    console.warn("Session callback received null session");
-                    return {
-                        user: {
-                            id: 'anonymous',
-                            name: 'Anonymous User',
-                            email: 'anonymous@example.com'
-                        },
-                        expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
-                    };
-                }
-
-                // Ensure session.user exists
-                if (!session.user) {
-                    session.user = {};
-                }
-
-                // Copy values from token to session if they exist
-                if (token) {
-                    if (token.sub) session.user.id = token.sub;
-                    if (token.name) session.user.name = token.name;
-                    if (token.email) session.user.email = token.email;
-                    if (token.picture) session.user.image = token.picture;
-                }
-
-                // Set fallback values for critical fields
-                session.user.name = session.user.name || 'Anonymous User';
-                session.user.email = session.user.email || 'anonymous@example.com';
-                session.user.id = session.user.id || 'anonymous';
-
-                // Ensure session expires is set to avoid client-side errors
-                if (!session.expires) {
-                    session.expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-                }
-
-                return session;
-            } catch (error) {
-                console.error("Error in session callback:", error);
-                // Return a minimal valid session object to prevent crashes
-                return {
-                    user: {
-                        id: 'error',
-                        name: 'Error User',
-                        email: 'error@example.com'
-                    },
-                    expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-                };
+            if (session?.user && token?.sub) {
+                session.user.id = token.sub;
             }
+            return session;
         },
-        async jwt({ token, user, account, profile }) {
-            try {
-                // Handle null or undefined token
-                if (!token) {
-                    console.warn("JWT callback received null token");
-                    token = {};
-                }
-
-                // Ensure sub exists on token
-                if (!token.sub) {
-                    token.sub = 'anonymous';
-                }
-
-                // Add data from user object when available (usually on sign-in)
-                if (user) {
-                    token.sub = user.id || 'anonymous';
-                    token.name = user.name;
-                    token.email = user.email;
-                    token.picture = user.image;
-                }
-
-                // Add data from OAuth profile when available
-                if (profile) {
-                    if (profile.name) token.name = profile.name;
-                    if (profile.email) token.email = profile.email;
-                    if (profile.picture) token.picture = profile.picture;
-                }
-
-                // Add data from OAuth account when available
-                if (account) {
-                    token.provider = account.provider;
-                }
-
-                return token;
-            } catch (error) {
-                console.error("Error in JWT callback:", error);
-                // Return a minimal valid token to prevent crashes
-                return { sub: 'error', error: 'token_error' };
+        async jwt({ token, user }) {
+            if (user) {
+                token.sub = user.id;
             }
+            return token;
         },
     },
     debug: process.env.NODE_ENV === 'development',
 };
 
-// Helper to access auth options throughout the app
 export function getAuthOptions() {
     return authOptions;
-} 
+}
