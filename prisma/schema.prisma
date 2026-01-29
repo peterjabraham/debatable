@@ -1,0 +1,197 @@
+// Prisma Schema for Debate-able
+// Database: PostgreSQL on Railway
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - stores authenticated users
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  provider      String?   // OAuth provider (google, github)
+  preferences   Json?     // User preferences (theme, notifications, etc.)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  debates       Debate[]
+  sessions      Session[]
+  accounts      Account[]
+  
+  @@map("users")
+}
+
+// Session model for NextAuth
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+// Account model for NextAuth OAuth
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// Debate model - represents a debate session
+model Debate {
+  id          String       @id @default(uuid())
+  userId      String
+  topic       String
+  status      DebateStatus @default(ACTIVE)
+  expertType  ExpertType   @default(HISTORICAL)
+  context     Json?        // Debate context (key points, user questions, etc.)
+  isFavorite  Boolean      @default(false)
+  tags        String[]     @default([])
+  summary     String?      @db.Text
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // Relations
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  experts     Expert[]
+  jobs        Job[]
+  
+  @@index([userId])
+  @@index([createdAt])
+  @@map("debates")
+}
+
+// Message model - individual messages in a debate
+model Message {
+  id                    String      @id @default(uuid())
+  debateId              String
+  role                  MessageRole
+  content               String      @db.Text
+  speaker               String?     // Expert name or "User"
+  sequence              Int         // Order in debate
+  usage                 Json?       // Token usage stats
+  citations             Json?       // Citation references
+  hasProcessedCitations Boolean     @default(false)
+  createdAt             DateTime    @default(now())
+  
+  // Relations
+  debate                Debate      @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  
+  @@index([debateId])
+  @@index([debateId, sequence])
+  @@map("messages")
+}
+
+// Expert model - AI experts participating in debates
+model Expert {
+  id               String     @id @default(uuid())
+  debateId         String
+  name             String
+  background       String     @db.Text
+  stance           Stance
+  perspective      String     @db.Text
+  expertise        String[]
+  type             ExpertType
+  identifier       String?    // AI expert identifier (e.g., "AI-CS1234")
+  voiceId          String?    // ElevenLabs voice ID
+  sourceReferences Json?      // Source references for citations
+  createdAt        DateTime   @default(now())
+  
+  // Relations
+  debate           Debate     @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  
+  @@index([debateId])
+  @@map("experts")
+}
+
+// Job model - async job queue for LLM operations
+model Job {
+  id          String    @id @default(uuid())
+  debateId    String?
+  type        JobType
+  status      JobStatus @default(PENDING)
+  payload     Json      // Input data for the job
+  result      Json?     // Output from completed job
+  progress    Int       @default(0) // 0-100
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  error       String?   @db.Text
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  
+  // Relations
+  debate      Debate?   @relation(fields: [debateId], references: [id], onDelete: SetNull)
+  
+  @@index([status])
+  @@index([debateId])
+  @@index([createdAt])
+  @@map("jobs")
+}
+
+// Enums
+enum DebateStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+  ERROR
+}
+
+enum ExpertType {
+  HISTORICAL
+  AI
+}
+
+enum Stance {
+  PRO
+  CON
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum JobType {
+  GENERATE_RESPONSE    // Generate expert response
+  SELECT_EXPERTS       // Select experts for topic
+  EXTRACT_TOPICS       // Extract topics from content
+  PROCESS_DOCUMENT     // Process uploaded document
+  GENERATE_SUMMARY     // Generate debate summary
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}

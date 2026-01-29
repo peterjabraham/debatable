@@ -1,31 +1,34 @@
 import OpenAI from 'openai';
 
-// Initialize a single OpenAI client instance to be shared across the application
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy-initialized OpenAI client singleton
+let openaiClient: OpenAI | null = null;
 
-// Validate the API key and log information about the configuration
-function validateApiKey(): boolean {
+// Get or create the OpenAI client instance
+function getOpenAIClient(): OpenAI {
+    if (openaiClient) {
+        return openaiClient;
+    }
+
     if (!process.env.OPENAI_API_KEY) {
-        console.error("OpenAI API key is missing");
-        return false;
+        throw new Error('OPENAI_API_KEY environment variable is not set');
     }
 
-    // Log the API key format (first few chars) for debugging
-    const keyFormat = process.env.OPENAI_API_KEY.substring(0, 7) + "...";
-    console.log(`OpenAI API key format: ${keyFormat}`);
+    openaiClient = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+    });
 
-    // Log the model being used
-    const model = process.env.OPENAI_MODEL || "gpt-4-turbo";
-    console.log(`Using OpenAI model: ${model}`);
+    // Log configuration in development
+    if (process.env.NODE_ENV === 'development') {
+        const keyFormat = process.env.OPENAI_API_KEY.substring(0, 7) + "...";
+        console.log(`OpenAI API key format: ${keyFormat}`);
+        console.log(`Using OpenAI model: ${getModel()}`);
 
-    // Warn if using project-based OpenAI API key
-    if (process.env.OPENAI_API_KEY.startsWith('sk-proj-')) {
-        console.warn("WARNING: Using a project-based API key (sk-proj-...). If you encounter authentication issues, you may need to use a standard API key (sk-...) instead.");
+        if (process.env.OPENAI_API_KEY.startsWith('sk-proj-')) {
+            console.warn("Using a project-based API key (sk-proj-...)");
+        }
     }
 
-    return true;
+    return openaiClient;
 }
 
 // Helper function to calculate cost based on token usage
@@ -41,8 +44,17 @@ export function getModel(): string {
     return process.env.OPENAI_MODEL || "gpt-4-turbo";
 }
 
-// Validate the API key when this module is imported
-validateApiKey();
+// Export the lazy getter as a proxy that calls getOpenAIClient() on access
+const openaiProxy = new Proxy({} as OpenAI, {
+    get(_target, prop) {
+        const client = getOpenAIClient();
+        const value = client[prop as keyof OpenAI];
+        if (typeof value === 'function') {
+            return value.bind(client);
+        }
+        return value;
+    }
+});
 
-// Export the shared OpenAI client
-export default openai; 
+export { getOpenAIClient };
+export default openaiProxy;

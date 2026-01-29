@@ -3,18 +3,13 @@
  * This is a production-safe version of the document processor that doesn't
  * try to access test files or use libraries that cause build issues.
  */
-import OpenAI from 'openai';
+import openai from './openai-client';
 
 // Type for document retrieval results
 interface RetrievalResult {
     text: string;
     score: number;
 }
-
-// Create a real OpenAI client
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
 
 // Production-safe document processor that uses real embeddings but avoids problematic dependencies
 export class SafeDocumentProcessor {
@@ -161,4 +156,4 @@ export class SafeDocumentProcessor {
 }
 
 // Export a singleton instance
-export const documentProcessor = SafeDocumentProcessor; 
+export const documentProcessor = SafeDocumentProcessor;

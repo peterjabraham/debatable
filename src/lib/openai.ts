@@ -52,6 +52,29 @@ function sanitizeNameForOpenAI(name: string | undefined): string | undefined {
     return name.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+// Lazy-initialized OpenAI client singleton
+let openaiClient: OpenAI | null = null;
+
+export function getOpenAIClient(): OpenAI {
+    if (openaiClient) {
+        return openaiClient;
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OpenAI API key is required. Set OPENAI_API_KEY environment variable.');
+    }
+
+    openaiClient = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY.trim(),
+        dangerouslyAllowBrowser: true,
+        defaultHeaders: {
+            'OpenAI-Organization': process.env.OPENAI_ORG_ID || undefined
+        }
+    });
+
+    return openaiClient;
+}
+
 // Server-side functions with real OpenAI implementation
 export async function generateDebateResponseServer(
     messages: DebateMessage[],
@@ -62,9 +85,7 @@ export async function generateDebateResponseServer(
         const model = process.env.OPENAI_MODEL || 'gpt-4-turbo-preview';
 
         // Ensure expert and required fields (name, expertise) are defined.
-        // Allow background to be potentially empty, but check for null/undefined explicitly if needed.
         if (!expert || !expert.name || expert.background === null || expert.background === undefined || !expert.expertise) {
-            // Log the problematic expert data for debugging
             console.error('Invalid expert data received:', JSON.stringify(expert));
             throw new Error(`Invalid expert data received for expert generation.`);
         }
@@ -114,8 +135,6 @@ export async function generateDebateResponseServer(
         // Calculate cost based on OpenAI pricing
         const promptTokens = response.usage?.prompt_tokens || 0;
         const completionTokens = response.usage?.completion_tokens || 0;
-        const totalTokens = response.usage?.total_tokens || 0;
-        // Use calculateOpenAICost helper for consistency
         const usageStats = calculateOpenAICost({ prompt_tokens: promptTokens, completion_tokens: completionTokens });
 
         return {
@@ -125,34 +144,9 @@ export async function generateDebateResponseServer(
 
     } catch (error) {
         console.error('OpenAI API error in generateDebateResponseServer:', error);
-        // Re-throw the error so the API route can handle it
         throw error;
     }
 }
 
-// Helper function to get OpenAI client
-let openaiClient: OpenAI | null = null;
-
-export function getOpenAIClient(): OpenAI {
-    if (!process.env.OPENAI_API_KEY) {
-        throw new Error('OpenAI API key is required');
-    }
-
-    // Reuse existing client if available
-    if (openaiClient) {
-        return openaiClient;
-    }
-
-    // Create new client with the new API key format
-    openaiClient = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY.trim(),
-        dangerouslyAllowBrowser: true,
-        defaultHeaders: {
-            'OpenAI-Organization': process.env.OPENAI_ORG_ID || undefined
-        }
-    });
-
-    return openaiClient;
-}
-
-export default getOpenAIClient(); 
+// Export lazy getter function as default (for compatibility with code expecting a function)
+export default getOpenAIClient;

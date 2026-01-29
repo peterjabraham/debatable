@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getDocument, updateDocument, COLLECTIONS } from '@/lib/db/firestore';
+import { prisma } from '@/lib/db/prisma';
 
 // Add new message to a debate
 export async function POST(
@@ -31,7 +31,10 @@ export async function POST(
         }
 
         // Check if the debate exists and if the user has permission
-        const existingDebate = await getDocument(COLLECTIONS.DEBATES, id);
+        const existingDebate = await prisma.debate.findUnique({
+            where: { id },
+            select: { userId: true }
+        });
 
         if (!existingDebate) {
             return NextResponse.json({ error: 'Debate not found' }, { status: 404 });
@@ -41,35 +44,46 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Get current message count for sequence
+        const messageCount = await prisma.message.count({
+            where: { debateId: id }
+        });
+
         // Generate a message ID
         const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-        // Prepare the message data
-        const messageData = {
-            id: messageId,
-            content: data.content,
-            role: data.role || 'user',
-            speaker: data.speaker || session.user.name || 'User',
-            timestamp: new Date().toISOString(),
-            userId: session.user.id
-        };
+        // Create the message in the database
+        const message = await prisma.message.create({
+            data: {
+                id: messageId,
+                debateId: id,
+                content: data.content,
+                role: (data.role?.toUpperCase() || 'USER') as any,
+                speaker: data.speaker || session.user.name || 'User',
+                sequence: messageCount
+            }
+        });
 
-        // Store the message in Firestore
-        const messagesPath = `${COLLECTIONS.DEBATES}/${id}/messages`;
-        await updateDocument(messagesPath, messageId, messageData);
-
-        // Update the debate's lastUpdated timestamp
-        await updateDocument(COLLECTIONS.DEBATES, id, {
-            updatedAt: new Date().toISOString()
+        // Update the debate's timestamp
+        await prisma.debate.update({
+            where: { id },
+            data: { updatedAt: new Date() }
         });
 
         return NextResponse.json({
             success: true,
-            message: messageData
+            message: {
+                id: message.id,
+                content: message.content,
+                role: message.role.toLowerCase(),
+                speaker: message.speaker,
+                timestamp: message.createdAt.toISOString(),
+                userId: session.user.id
+            }
         });
     } catch (error) {
         console.error(`Error adding message to debate ${params.id}:`, error);
         const message = error instanceof Error ? error.message : 'Unknown error occurred';
         return NextResponse.json({ error: message }, { status: 500 });
     }
-} 
+}

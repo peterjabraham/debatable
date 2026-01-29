@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fetch from 'cross-fetch';
 import * as cheerio from 'cheerio';
-import OpenAI from 'openai';
+import openai from '@/lib/ai/openai-client';
 import { extractTextFromUrl } from '@/lib/content-processing/web-scraper';
 import { extractTopicsFromText } from '@/lib/content-processing/topic-extractor';
-
-// Create an OpenAI client
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
 
 // Intelligent topic extractor using OpenAI
 class AITopicExtractor {
@@ -160,4 +155,4 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
-} 
+}

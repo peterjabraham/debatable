@@ -1,6 +1,7 @@
 import { Message } from '@/types/message';
 import { Expert } from '@/types/expert';
-import { firestore, COLLECTIONS } from '../db/firestore';
+import { prisma } from '../db/prisma';
+import { v4 as uuid } from 'uuid';
 
 interface TaskData {
     debateId: string;
@@ -63,45 +64,84 @@ class BackgroundTasks {
     private async initializeDebateStorage(data: TaskData & { experts: Expert[] }): Promise<void> {
         const { debateId, experts } = data;
 
-        // Create experts subcollection
-        const batch = firestore.batch();
-        const expertsRef = firestore
-            .collection(COLLECTIONS.DEBATES)
-            .doc(debateId)
-            .collection('experts');
-
-        experts.forEach(expert => {
-            batch.set(expertsRef.doc(expert.id), expert);
-        });
-
-        await batch.commit();
+        // Create experts using Prisma transaction
+        await prisma.$transaction(
+            experts.map((expert, index) =>
+                prisma.expert.create({
+                    data: {
+                        id: expert.id || uuid(),
+                        debateId,
+                        name: expert.name,
+                        background: expert.background || '',
+                        stance: index === 0 ? 'PRO' : 'CON',
+                        perspective: expert.perspective || '',
+                        expertise: expert.expertise || [],
+                        type: 'HISTORICAL'
+                    }
+                })
+            )
+        );
     }
 
     private async storeMessage(data: TaskData & { message: Message }): Promise<void> {
         const { debateId, message } = data;
 
-        await firestore
-            .collection(COLLECTIONS.DEBATES)
-            .doc(debateId)
-            .collection('messages')
-            .doc(message.id || crypto.randomUUID())
-            .set(message);
+        // Get current message count for sequence
+        const messageCount = await prisma.message.count({
+            where: { debateId }
+        });
+
+        await prisma.message.create({
+            data: {
+                id: message.id || uuid(),
+                debateId,
+                role: (message.role?.toUpperCase() || 'USER') as any,
+                content: message.content,
+                speaker: message.speaker,
+                sequence: messageCount,
+                usage: message.usage as any,
+                citations: message.citations as any,
+                hasProcessedCitations: false
+            }
+        });
     }
 
     private async updateContext(data: TaskData & { message: Message }): Promise<void> {
         const { debateId, message } = data;
 
         // Update debate context based on new message
-        // This could include updating key points, sentiment analysis, etc.
-        // Implementation depends on your specific needs
+        // Get current debate context
+        const debate = await prisma.debate.findUnique({
+            where: { id: debateId },
+            select: { context: true }
+        });
+
+        if (debate) {
+            const currentContext = (debate.context as any) || {};
+            const updatedContext = {
+                ...currentContext,
+                lastMessageAt: new Date().toISOString(),
+                messageCount: ((currentContext.messageCount || 0) + 1)
+            };
+
+            await prisma.debate.update({
+                where: { id: debateId },
+                data: { context: updatedContext }
+            });
+        }
     }
 
     private async processCitations(data: TaskData & { message: Message }): Promise<void> {
         const { debateId, message } = data;
 
-        // Process and store citations from the message
-        // Implementation depends on your citation handling needs
+        // Mark message as having processed citations
+        if (message.id) {
+            await prisma.message.update({
+                where: { id: message.id },
+                data: { hasProcessedCitations: true }
+            });
+        }
     }
 }
 
-export const backgroundTasks = BackgroundTasks.getInstance(); 
+export const backgroundTasks = BackgroundTasks.getInstance();
