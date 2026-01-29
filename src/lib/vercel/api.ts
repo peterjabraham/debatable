@@ -170,15 +170,19 @@ class VercelAPI {
         // Use explicit environment variable if available
         this.monitoringApiKey = process.env.NEXT_PUBLIC_MONITORING_API_KEY || 'test-monitoring-key';
 
-        console.log('Initialized VercelAPI with monitoring key:',
-            this.monitoringApiKey ?
-                `${this.monitoringApiKey.substring(0, 4)}...${this.monitoringApiKey.substring(this.monitoringApiKey.length - 4)}` :
-                'none');
+        // Silent in production - Vercel monitoring is optional
+        if (process.env.NODE_ENV === 'development') {
+            console.log('Initialized VercelAPI with monitoring key:',
+                this.monitoringApiKey ?
+                    `${this.monitoringApiKey.substring(0, 4)}...${this.monitoringApiKey.substring(this.monitoringApiKey.length - 4)}` :
+                    'none');
+        }
 
         // Use mock data in development or if token is not provided
         this.useMock = process.env.NODE_ENV === 'development' || !this.token;
 
-        if (this.useMock) {
+        // Only warn in development - Vercel monitoring is optional for Railway deployments
+        if (this.useMock && process.env.NODE_ENV === 'development') {
             console.warn('Using mock Vercel API data. Set NEXT_PUBLIC_VERCEL_TOKEN to use real API.');
         }
     }

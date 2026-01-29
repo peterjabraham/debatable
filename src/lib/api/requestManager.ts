@@ -11,7 +11,7 @@
 // Constants for configuration
 const API_CONFIG = {
     // Use environment variable or fallback to localhost
-    baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3030',
+    baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || '',
 
     // Request throttling window
     throttleWindow: 5000, // 5 seconds

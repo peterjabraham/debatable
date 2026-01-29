@@ -6,8 +6,8 @@
 const useRealApi = typeof process !== 'undefined' &&
     process.env.NEXT_PUBLIC_USE_REAL_API === 'true';
 
-// Flag to disable debug logs in MVP mode
-export const DISABLE_DEBUG_LOGS = false;
+// Flag to disable debug logs in production
+export const DISABLE_DEBUG_LOGS = process.env.NODE_ENV === 'production';
 
 // Check if we're in a browser environment
 const isBrowser = typeof window !== 'undefined';
@@ -32,7 +32,7 @@ export const MVP_CONFIG: MVPConfig = {
     // API URL - will not be used when server is unavailable
     apiUrl: typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE_URL
         ? process.env.NEXT_PUBLIC_API_BASE_URL
-        : 'http://localhost:3030',
+        : '',
 
     // Silence console logs in MVP
     disableDebugLogs: DISABLE_DEBUG_LOGS,

@@ -1035,9 +1035,9 @@ export function DebatePanel({ existingDebate }: { existingDebate?: any }) {
 
         // API endpoints to try in order of preference
         const apiEndpoints = [
-            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/content/document`,
-            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/content/analyze`,
-            `${API_CONFIG?.baseUrl || 'http://localhost:3030'}/api/analyze`
+            `${API_CONFIG?.baseUrl || ''}/api/content/document`,
+            `${API_CONFIG?.baseUrl || ''}/api/content/analyze`,
+            `${API_CONFIG?.baseUrl || ''}/api/analyze`
         ];
 
         try {
