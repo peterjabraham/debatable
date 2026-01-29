@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from 'react';
 import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { Button } from './ui/button';
@@ -8,13 +7,7 @@ import {
     User,
     LogOut,
     Settings,
-    History,
-    Heart,
-    PlusCircle,
-    RefreshCcw,
-    AlertTriangle,
     LogIn,
-    LifeBuoy
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import {
@@ -30,76 +23,16 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LogoutButton } from '@/components/auth';
 
 export function UserNavigation() {
-    const { data: session, status, update } = useSession();
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [authError, setAuthError] = useState(false);
-    const [showAuthResetComplete, setShowAuthResetComplete] = useState(false);
+    const { data: session, status } = useSession();
 
-    // Check if coming back from auth reset
-    useEffect(() => {
-        if (window.location.search.includes('reset=')) {
-            setShowAuthResetComplete(true);
-            // Hide the message after 5 seconds
-            setTimeout(() => {
-                setShowAuthResetComplete(false);
-            }, 5000);
-        }
-    }, []);
-
-    // Effect to handle authentication state properly
-    useEffect(() => {
-        // Check for error conditions in the session
-        const hasValidSession = status === 'authenticated' &&
-            session &&
-            session.user &&
-            session.user.id &&
-            session.user.id !== 'anonymous' &&
-            session.user.id !== 'error';
-
-        // If status is authenticated but session isn't valid, we have an error
-        const hasAuthError = status === 'authenticated' && !hasValidSession;
-
-        setIsAuthenticated(hasValidSession);
-        setAuthError(hasAuthError);
-
-        console.log('Auth state:', { status, hasValidSession, hasAuthError });
-    }, [session, status]);
-
-    // Handle manual refresh of session
-    const handleRefreshSession = async () => {
-        try {
-            await update();
-            window.location.reload();
-        } catch (error) {
-            console.error('Error refreshing session:', error);
-        }
-    };
-
-    // Handle sign in with force-reload
-    const handleSignIn = () => {
-        signIn(undefined, { callbackUrl: window.location.href });
-    };
-
-    const userInitials = session?.user?.name ? session.user.name.split(' ').map(n => n[0]).join('') : '';
+    const isAuthenticated = status === 'authenticated' && session?.user;
+    const userInitials = session?.user?.name 
+        ? session.user.name.split(' ').map(n => n[0]).join('').toUpperCase() 
+        : 'U';
 
     return (
         <div className="flex items-center gap-4">
             <ThemeToggle />
-
-            {showAuthResetComplete && (
-                <div className="bg-green-500 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1">
-                    <span>Auth reset complete!</span>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleSignIn}
-                        className="text-white hover:bg-green-600 px-2 py-0 h-6"
-                    >
-                        Sign In Now
-                    </Button>
-                </div>
-            )}
 
             {status === 'loading' ? (
                 <div className="h-10 w-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
@@ -136,12 +69,6 @@ export function UserNavigation() {
                                     <span>Settings</span>
                                 </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                                <Link href="/debug/auth">
-                                    <LifeBuoy className="mr-2 h-4 w-4" />
-                                    <span>Auth Debug</span>
-                                </Link>
-                            </DropdownMenuItem>
                         </DropdownMenuGroup>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
@@ -159,26 +86,12 @@ export function UserNavigation() {
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
-            ) : authError ? (
-                <div className="flex gap-2">
-                    <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                            window.location.href = '/auth/reset';
-                        }}
-                        className="flex items-center gap-1"
-                    >
-                        <AlertTriangle className="h-4 w-4" />
-                        <span>Fix Auth</span>
-                    </Button>
-                </div>
             ) : (
                 <Button
                     variant="default"
                     size="sm"
-                    onClick={handleSignIn}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1 min-w-24"
+                    onClick={() => signIn()}
+                    className="flex items-center gap-2"
                 >
                     <LogIn className="h-4 w-4" />
                     <span>Sign In</span>
@@ -186,4 +99,4 @@ export function UserNavigation() {
             )}
         </div>
     );
-} 
+}
