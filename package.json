@@ -32,7 +32,7 @@
     "test:watch": "vitest watch",
     "generate-test-pdf": "node scripts/generate-test-pdf.js",
     "worker": "npx tsx src/lib/queue/worker.ts",
-    "postinstall": "prisma generate && prisma db push --skip-generate"
+    "postinstall": "node -e \"if(!process.env.DATABASE_URL){console.log('Skipping prisma: DATABASE_URL not set');process.exit(0)}\" && prisma generate && prisma db push --skip-generate"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.751.0",
